@@ -5,7 +5,8 @@
   "scripts": {
     "test-claude": "tsx scripts/test-claude.ts",
     "convert": "tsx src/cli/convert.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "chunks": "tsx src/cli/chunks.ts"
   },
   "keywords": [],
   "author": "",
