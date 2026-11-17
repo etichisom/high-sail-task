@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "chunks": "tsx src/cli/chunks.ts",
     "vision-pages": "tsx src/cli/vision-pages.ts",
-    "ingest": "tsx src/cli/ingest.ts"
+    "ingest": "tsx src/cli/ingest.ts",
+    "embed": "tsx src/cli/embed.ts",
+    "search": "tsx src/cli/search.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.9.0",
     "@docling/docling-client": "^2.150.0",
+    "@huggingface/transformers": "^4.3.2",
     "dotenv": "^18.0.10",
     "pg": "^8.23.1"
   },

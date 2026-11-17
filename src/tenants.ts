@@ -8,3 +8,9 @@ export async function findOrCreateTenant(name: string): Promise<string> {
   const created = await pool.query<{ id: string }>("INSERT INTO tenants (name) VALUES ($1) RETURNING id", [name]);
   return created.rows[0]!.id;
 }
+
+// For commands that work on an existing company (embed, search): a typo must not create an empty one.
+export async function findTenant(name: string): Promise<string | undefined> {
+  const found = await pool.query<{ id: string }>("SELECT id FROM tenants WHERE name = $1", [name]);
+  return found.rows[0]?.id;
+}
