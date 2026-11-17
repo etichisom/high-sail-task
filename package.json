@@ -10,7 +10,8 @@
     "vision-pages": "tsx src/cli/vision-pages.ts",
     "ingest": "tsx src/cli/ingest.ts",
     "embed": "tsx src/cli/embed.ts",
-    "search": "tsx src/cli/search.ts"
+    "search": "tsx src/cli/search.ts",
+    "ask": "tsx src/cli/ask.ts"
   },
   "keywords": [],
   "author": "",

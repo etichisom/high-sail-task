@@ -6,6 +6,7 @@ import { embedQuery, toPgVector } from "./embed.js";
 
 export type HybridHit = {
   id: string;
+  filename: string; // the PDF, for citations
   pageStart: number;
   pageEnd: number;
   chunkType: string;
@@ -25,6 +26,7 @@ export async function hybridSearch(tenantId: string, query: string, limit = 5): 
   // 3. merge: FULL JOIN keeps chunks found by either list; score = 1/(60 + place) from each list
   const { rows } = await pool.query<{
     id: string;
+    filename: string;
     page_start: number;
     page_end: number;
     chunk_type: string;
@@ -48,12 +50,13 @@ export async function hybridSearch(tenantId: string, query: string, limit = 5): 
        ORDER BY ts_rank(tsv, query) DESC
        LIMIT $4
      )
-     SELECT c.id, c.page_start, c.page_end, c.chunk_type, c.section, c.content,
+     SELECT c.id, d.filename, c.page_start, c.page_end, c.chunk_type, c.section, c.content,
             v.rank AS vector_rank, k.rank AS keyword_rank,
             coalesce(1.0 / ($5 + v.rank), 0) + coalesce(1.0 / ($5 + k.rank), 0) AS score
      FROM vector_hits v
      FULL JOIN keyword_hits k ON k.id = v.id
      JOIN chunks c ON c.id = coalesce(v.id, k.id) AND c.tenant_id = $1
+     JOIN documents d ON d.id = c.document_id
      ORDER BY score DESC
      LIMIT $6`,
     [tenantId, vector, query, config.searchCandidates, config.rrfK, limit],
@@ -61,6 +64,7 @@ export async function hybridSearch(tenantId: string, query: string, limit = 5): 
 
   return rows.map((row) => ({
     id: row.id,
+    filename: row.filename,
     pageStart: row.page_start,
     pageEnd: row.page_end,
     chunkType: row.chunk_type,

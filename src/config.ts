@@ -20,4 +20,8 @@ export const config = {
   // Hybrid search (Lab 10)
   searchCandidates: Number(process.env.SEARCH_CANDIDATES ?? 20), // top N from each search before merging
   rrfK: Number(process.env.RRF_K ?? 60), // smooths the merge; 60 is the standard value
+  // Answering (Lab 11)
+  answerModel: process.env.ANSWER_MODEL ?? "claude-haiku-5-5",
+  answerEffort: process.env.ANSWER_EFFORT ?? "medium", // low | medium | high: how much Claude thinks first
+  answerSources: Number(process.env.ANSWER_SOURCES ?? 8), // chunks from hybrid search sent to Claude
 };
