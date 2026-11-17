@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { config } from "../config.js";
+import type { DoclingDoc } from "./docling-types.js";
 
 const client = new DoclingClient({
   baseUrl: config.doclingUrl,
@@ -17,7 +18,7 @@ export function fileHash(pdfPath: string): string {
   return createHash("sha256").update(readFileSync(pdfPath)).digest("hex");
 }
 
-export async function convertPdf(pdfPath: string): Promise<any> {
+export async function convertPdf(pdfPath: string): Promise<DoclingDoc> {
   const cachePath = join(cacheDir, `${fileHash(pdfPath)}.json`);
   if (existsSync(cachePath)) {
     return JSON.parse(readFileSync(cachePath, "utf8"));
@@ -30,5 +31,5 @@ export async function convertPdf(pdfPath: string): Promise<any> {
 
   mkdirSync(cacheDir, { recursive: true });
   writeFileSync(cachePath, JSON.stringify(result.document));
-  return result.document;
+  return result.document as DoclingDoc;
 }

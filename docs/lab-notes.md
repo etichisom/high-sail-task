@@ -278,6 +278,54 @@ Docling everywhere + Haiku on ~5% of pages ≈ $25k plus CPU/GPU workers. That i
 
 ---
 
+## 5e. Lab 8 — Ingest pipeline (PDF → chunks in Postgres)
+
+**Project structure (one rule):** library code (`src/ingest`, later `src/retrieval`, `src/answer`) only exports
+functions; entry points (`src/cli`, later `src/api`, `src/worker`) are thin and call them. So the CLI, the web API
+and the background worker run the exact same pipeline.
+
+```
+src/config.ts            settings from .env (fails fast if one is missing)
+src/db.ts                one shared Postgres pool
+src/tenants.ts           findOrCreateTenant(name)
+src/ingest/docling.ts    PDF → Docling JSON, cached in store/docling/<sha256>.json
+src/ingest/docling-types.ts  types for the JSON parts we read
+src/ingest/chunk.ts      JSON → chunks
+src/ingest/needs-vision.ts   which pages also go to Haiku, with reasons
+src/ingest/index.ts      ingestDocument(tenantId, pdf): the whole pipeline
+src/cli/{convert,chunks,vision-pages,ingest}.ts
+scripts/test-claude.ts   Lab 4 experiment
+```
+
+**Key decisions**
+- Docling cache keyed by **file hash**, not filename: two companies can upload different `manual.pdf` files;
+  the same file is converted once. Mitsubishi: 48.7 s first run, 0.0 s from cache.
+- Our own chunker instead of Docling's HybridChunker: runs in TypeScript on the cached JSON (instant to tune),
+  fixes Docling's flat headings, removes the hidden duplicate text layer, keeps picture text as separate
+  "figure" chunks. A Docling-chunker comparison can be an eval experiment.
+- Docling marks every heading level 1. Fix: numbered headings ("3.26 F12 …") start a main section; headings
+  that appear 3+ times ("Oorzaken van de fout:") are labels inside the section. Result: F12's conditions and
+  all 10 causes are one chunk under "3.26 F12 …" (pages 42–43).
+- Long tables are split between rows with the header repeated (the H6 row always has its column names).
+- Ingest: skip if (tenant_id, file_hash) is already `ready`; one transaction per document (all chunks or none);
+  failures set `status = 'failed'` + `error`; parameterised queries (`$1`) everywhere.
+
+**Results (Mitsubishi, tenant "demo")**: 10 pages → 72 chunks (39 text, 13 table, 20 figure), 4 pages need vision
+(p5 icon table, p6/p8/p9 screen pictures). Second run: "already ingested, skipped". Keyword search
+`tsv @@ to_tsquery('simple','holiday')` returns the p5 icon table first. `'suitcase'` returns nothing yet → vision (8.6).
+
+**Routing on the other test docs:** P&ID p1 (large page), Weil-McLain 8/44 (p35 correctly not flagged),
+Panasonic NL 39/68 (troubleshooting flowcharts on most error-code pages). Whole pack ≈ 200 pages ≈ $0.40 one-time.
+
+**Incident:** converting the whole pack, Docling was killed for running out of memory (`OOMKilled`, exit 137)
+on De Dietrich (180 pages): Docker had 8 GB and Docling runs 2 documents at once by default.
+Fix: Docker memory 12 GB, `DOCLING_SERVE_ENG_LOC_NUM_WORKERS=1`, `restart: unless-stopped`.
+Fallback if still too big: convert in page ranges.
+
+**Considered:** Drizzle ORM (best pgvector support among TS ORMs) and Hono for the API later. Kept plain SQL for now.
+
+---
+
 ## 6. Decisions so far
 
 | Decision | Choice | Why |
@@ -359,7 +407,7 @@ Note: the brief puts multi-tenancy out of scope; a `tenant_id` column is a cheap
 | Lab 5 — Haiku vision test | 🔄 Icons done; P&ID test still to run |
 | Lab 6 — Docker + Postgres/pgvector + schema (7 tables, tenant_id) | ✅ Done |
 | Lab 7 — Docling + RapidOCR container and test (4 documents) | ✅ Done |
-| Next — ingest: Docling JSON → chunks in Postgres (with tenant_id) | ⏳ |
+| Lab 8 — ingest: Docling JSON → chunks in Postgres (with tenant_id) | 🔄 8.1–8.5 done; 8.6 vision chunks + full pack next |
 | Lab 6 — chunking + search index (the "R") | ⏳ |
 | Lab 7 — ask command: retrieve → answer + citations / abstain (the "A + G") | ⏳ |
 | Lab 8 — evaluation report | ⏳ |
