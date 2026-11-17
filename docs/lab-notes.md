@@ -258,6 +258,21 @@ Still to do: Haiku on the P&ID, and a human check of the disputed icons in the P
 6. Options names (API): `do_ocr`, `force_ocr`, `ocr_preset` (`auto`/`rapidocr`/…), `page_range` [from, to].
    Results are deleted ~5 min after a job finishes, so fetch them right away.
 
+**When does a page also go to Haiku? (`needsVision(page)`, measured on the test pages)**
+
+| Signal | Threshold | Catches |
+|---|---|---|
+| Page much bigger than A4 | width or height > 1200 pt | P&ID (2384×1684, has 0 pictures because it is vector lines) |
+| Pictures cover the page | > 30% (ignore repeated logos by image hash) | Flowcharts (Panasonic p45: 48%) |
+| Many tiny text fragments | ≥ 25 texts of ≤ 4 chars | Icon tables (Mitsubishi p5: 35, p6: 80), diagram labels |
+| Junk characters | CJK symbols in an EN/NL/FR doc | Icons OCR'd as `日`, `山` |
+| Table with an empty column | any | Icon tables |
+
+Haiku output is **added** as an extra chunk; Docling's chunks are kept. Rules can be generous
+(~60 flagged pages × $0.002 ≈ $0.12). Not caught: scrambled tables on normal pages (Panasonic p16) →
+config override list now, automatic broken-table check as "another week". Verify in eval that every
+visual dev question's page (dev-01, 15, 16, 17, 19, 20, 21) is flagged.
+
 **Cost note (500 companies × 10,000 docs ≈ 250M pages):** vision on every page ≈ $500k (Haiku) to $10M+ (Opus);
 Docling everywhere + Haiku on ~5% of pages ≈ $25k plus CPU/GPU workers. That is the case for page routing.
 
