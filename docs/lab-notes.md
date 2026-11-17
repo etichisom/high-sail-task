@@ -207,6 +207,62 @@ Still to do: Haiku on the P&ID, and a human check of the disputed icons in the P
 
 ---
 
+## 5d. Lab 7 — Docling + RapidOCR (PaddleOCR models) test
+
+**Setup**
+- Added a `docling` service to `docker-compose.yml`: image `quay.io/docling-project/docling-serve`,
+  port **5001**, `DOCLING_SERVE_ENABLE_UI=true` → web UI at `http://localhost:5001/ui`.
+- Image is ~5.4 GB. **Incident:** the Mac disk was full (1.4 GB free), so the pull failed with
+  `input/output error` and corrupted Docker's storage. Fix: freed space (Xcode DerivedData, simulator
+  data), reset Docker's disk, re-pulled, reloaded `db/schema.sql`. Lesson: check `df -h` before big pulls.
+- Docker on a Mac has **no GPU**, so all Docling models run on CPU (~6 cores busy during a conversion).
+
+**Results (UI, default options; scan with Force OCR)**
+
+| Document | Pages | Time | Result |
+|---|---|---|---|
+| Panasonic storingsanalyse (NL, text) | 68 | ~3–4.5 min | ✅ Headings clean (one section per error code), F12 perfect (dev-03), simple tables good. ❌ Big error-code table 2.2 (p16) scrambled; 149 duplicated text blocks (hidden double text layer); flowcharts are only `![Image]`; formulas garbled |
+| Weil-McLain ODU (EN, scan) | 44 | 181 s (~4 s/page) | ✅ H6 = DC fan motor fault + both checks, p35 (dev-09). ✅ MCA 34 A / MFA 50 A / 8 AWG, p28 (dev-10). ⚠️ OCR code errors: `HO`→H0, `HI`→H1, `hH`→H4, `(r snpr)`→(Tp sensor) |
+| Mitsubishi Ecodan (EN, icons) | 10 | fast | ❌ Icon column of the p5 table is **empty**; "Holiday schedule is activated" is there but nothing says "suitcase with a clock" → dev-17 fails. Icons OCR'd as junk (`日`, `山`, `III`) |
+| Sporthal P&ID (1 page, A1 drawing) | 1 | fast | ❌ Tags badly garbled: `v 202`, `EV 31` (EV-01), `SV-51 … 3 ber` (SV-01 3 bar), `53-501` (SG-301), "vaamruk" (voordruk). **No connections** at all → dev-19 (which valve between buffer and 3-way valve) impossible; dev-20/21 unreliable |
+
+**Scorecard vs Claude vision**
+
+| Page type | Docling + RapidOCR | Haiku vision | Use |
+|---|---|---|---|
+| Normal text | ✅ | – | Docling (free) |
+| Scanned tables | ✅ with O/0, I/1 errors | ✅ | Docling + code normalisation |
+| Complex/broken tables | ❌ scrambled | ✅ | Vision fallback |
+| Icons | ❌ empty | ✅ | Haiku |
+| P&ID | ❌ garbled, no connections | ✅ | Haiku (full drawing + crops) |
+| Speed | ~4 s/page (CPU) | ~14 s/page | |
+| Cost | $0 | ~$0.002/page | |
+
+**Conclusion:** Option B routing is confirmed by evidence, not opinion.
+
+**Docling JSON (what the ingest code will read, not the markdown)**
+- `pages` (one per PDF page), `texts`, `tables`, `pictures`, `groups`.
+- Every text/table has `prov[0].page_no` (**PDF page, counted from 1**) and a `bbox` → used for citations.
+  Markdown export **loses page numbers**, so ingest must use JSON.
+- Text labels: `section_header` (split chunks here), `text`, `list_item`, `caption`, and
+  `page_header`/`page_footer` (`content_layer: "furniture"` → drop).
+- Tables: `data.grid` = rows × cells → one chunk per table (never split).
+- Pictures: position only, no content → candidate pages for vision.
+
+**Ingest rules learned**
+1. Read JSON, drop furniture.
+2. Drop exact duplicate texts on the same page.
+3. Group texts under their `section_header`; tables are their own chunk; keep `page_start`/`page_end`.
+4. Normalise error-code tokens (index both `HO` and `H0`, `HI` and `H1`).
+5. Send to Haiku vision: pages with icon tables, diagrams, P&ID, and tables that look scrambled.
+6. Options names (API): `do_ocr`, `force_ocr`, `ocr_preset` (`auto`/`rapidocr`/…), `page_range` [from, to].
+   Results are deleted ~5 min after a job finishes, so fetch them right away.
+
+**Cost note (500 companies × 10,000 docs ≈ 250M pages):** vision on every page ≈ $500k (Haiku) to $10M+ (Opus);
+Docling everywhere + Haiku on ~5% of pages ≈ $25k plus CPU/GPU workers. That is the case for page routing.
+
+---
+
 ## 6. Decisions so far
 
 | Decision | Choice | Why |
@@ -287,7 +343,8 @@ Note: the brief puts multi-tenancy out of scope; a `tenant_id` column is a cheap
 | Lab 4 — prove vision transcription | ✅ Done |
 | Lab 5 — Haiku vision test | 🔄 Icons done; P&ID test still to run |
 | Lab 6 — Docker + Postgres/pgvector + schema (7 tables, tenant_id) | ✅ Done |
-| Next — Docling + PaddleOCR container and test | ⏳ |
+| Lab 7 — Docling + RapidOCR container and test (4 documents) | ✅ Done |
+| Next — ingest: Docling JSON → chunks in Postgres (with tenant_id) | ⏳ |
 | Lab 6 — chunking + search index (the "R") | ⏳ |
 | Lab 7 — ask command: retrieve → answer + citations / abstain (the "A + G") | ⏳ |
 | Lab 8 — evaluation report | ⏳ |

@@ -11,5 +11,13 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  docling:
+    image: quay.io/docling-project/docling-serve
+    container_name: manual-docling
+    environment:
+      DOCLING_SERVE_ENABLE_UI: "true"
+    ports:
+      - "5001:5001"
+
 volumes:
   pgdata:
