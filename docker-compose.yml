@@ -14,8 +14,10 @@ services:
   docling:
     image: quay.io/docling-project/docling-serve
     container_name: manual-docling
+    restart: unless-stopped
     environment:
       DOCLING_SERVE_ENABLE_UI: "true"
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
     ports:
       - "5001:5001"
 
