@@ -7,7 +7,8 @@
     "convert": "tsx src/cli/convert.ts",
     "typecheck": "tsc --noEmit",
     "chunks": "tsx src/cli/chunks.ts",
-    "vision-pages": "tsx src/cli/vision-pages.ts"
+    "vision-pages": "tsx src/cli/vision-pages.ts",
+    "ingest": "tsx src/cli/ingest.ts"
   },
   "keywords": [],
   "author": "",
