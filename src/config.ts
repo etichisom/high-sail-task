@@ -17,4 +17,7 @@ export const config = {
   embeddingDtype: process.env.EMBEDDING_DTYPE ?? "q8", // q8 = 8-bit weights: 570 MB instead of 2.3 GB
   embedRowsPerRound: Number(process.env.EMBED_ROWS_PER_ROUND ?? 32), // chunks read + written per database round
   modelCacheDir: process.env.MODEL_CACHE_DIR ?? "store/models",
+  // Hybrid search (Lab 10)
+  searchCandidates: Number(process.env.SEARCH_CANDIDATES ?? 20), // top N from each search before merging
+  rrfK: Number(process.env.RRF_K ?? 60), // smooths the merge; 60 is the standard value
 };
