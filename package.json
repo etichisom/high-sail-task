@@ -6,7 +6,8 @@
     "test-claude": "tsx scripts/test-claude.ts",
     "convert": "tsx src/cli/convert.ts",
     "typecheck": "tsc --noEmit",
-    "chunks": "tsx src/cli/chunks.ts"
+    "chunks": "tsx src/cli/chunks.ts",
+    "vision-pages": "tsx src/cli/vision-pages.ts"
   },
   "keywords": [],
   "author": "",
