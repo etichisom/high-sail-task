@@ -12,7 +12,8 @@
     "embed": "tsx src/cli/embed.ts",
     "search": "tsx src/cli/search.ts",
     "ask": "tsx src/cli/ask.ts",
-    "eval": "tsx src/cli/eval.ts"
+    "eval": "tsx src/cli/eval.ts",
+    "vision": "tsx src/cli/vision.ts"
   },
   "keywords": [],
   "author": "",

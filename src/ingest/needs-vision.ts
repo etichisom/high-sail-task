@@ -39,6 +39,13 @@ export function pagesNeedingVision(doc: DoclingDoc, extraPages: number[] = []): 
       reasons.push("table with an empty column");
     }
 
+    // 'click " " to reset': empty quotes in the text are where an inline icon was (EcoFlow p7)
+    if (texts.some((t) => /["“”]\s*["”“]/.test(t))) reasons.push("icon inside the text");
+
+    if (doc.tables.some((t) => pageOf(t) === page && hasRepeatedHeader(t))) {
+      reasons.push("table lost its column names");
+    }
+
     if (extraPages.includes(page)) reasons.push("listed by hand");
 
     if (reasons.length > 0) result.push({ page, reasons });
@@ -65,4 +72,11 @@ function hasEmptyColumn(table: TableItem): boolean {
     if (empty / rows.length >= 0.8) return true;
   }
   return false;
+}
+
+// "Refrigerant | Refrigerant | Refrigerant": the real column names (model sizes) were lost (Midea p81)
+function hasRepeatedHeader(table: TableItem): boolean {
+  const header = table.data.grid[0]?.map((cell) => cell.text.trim()) ?? [];
+  const names = header.slice(1).filter((name) => name !== "");
+  return header.length >= 3 && names.length >= 2 && new Set(names).size === 1;
 }
