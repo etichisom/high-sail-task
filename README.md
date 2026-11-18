@@ -89,6 +89,7 @@ One command runs every question through the real pipeline and reports, as counts
 - **Retrieval recall**: did search find a right page at all? (tells a search failure from an answer failure)
 - **Citations**: right document + page cited, exactly and within ±1 page.
 - **Abstention**: accuracy, precision and recall, with the number of hallucinated answers and wrong abstentions.
+- **Language**: is the answer in the question's language? Detected from the answer text itself, not from Claude's label.
 - **Latency** p50 / p95 / max with the time per step (search, reranker, Claude), **tokens** and **cost** per question
   from the real token counts (answers and judge separately).
 
@@ -121,6 +122,15 @@ reason, and download the report.
 | + search-tool agent, keyword fix, prompt rules | 76 % | Cross-language questions find the right manual |
 | + evidence quote, field-word matching | 81 % | Fewer wrong values and wrong abstentions |
 | + vision v2 (self-contained table rows, valve types), small vision chunks, manual names, label/part rules | **86–90 %** | Search found the right page in 94–100 % of answerable questions |
+
+### Stretch goals
+
+| Goal | What is built |
+|---|---|
+| Comparison of approaches, with eval numbers | The step table above (baseline 38 % → vision 48 % → reranker 57 % → … → 86–90 %) and the model comparison below (Haiku 90 % vs Sonnet 57 % / 52 % at 12× the cost). Each row is a measured eval run. |
+| Citations more precise than a page | Each citation carries the **section, table or figure** it came from (e.g. "16.5.31 Outdoor Defrost Temperature Sensor Abnormality (F43)", "Home screen icons"), and each answer shows the **evidence quote**: the exact source line or table row, copied word for word. |
+| Follow-up questions | Saved conversations; a follow-up is rewritten into a complete question for the search, with the last 3 turns as context ("and where is the pressure switch?" after an F12 question). |
+| Add a document without re-processing everything | Files are identified by their sha256: an uploaded duplicate is skipped, and Docling and vision results are cached per file hash, so only the new manual is processed. |
 
 ### Model choice (measured, not assumed)
 

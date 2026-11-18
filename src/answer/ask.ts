@@ -7,7 +7,8 @@ import { pool } from "../db.js";
 import { hybridSearch } from "../retrieval/hybrid-search.js";
 import { rerank } from "../retrieval/rerank.js";
 
-export type Citation = { filename: string; pageStart: number; pageEnd: number };
+// section: the heading, table or figure the chunk came from (more precise than the page alone)
+export type Citation = { filename: string; pageStart: number; pageEnd: number; section?: string };
 
 // Progress steps, sent while a question is being answered, so a web page can show what is happening.
 // They carry no answer data: the full result comes at the end, from ask() itself.
@@ -322,7 +323,9 @@ export async function ask(
       const seen = citations.some(
         (c) => c.filename === hit.filename && c.pageStart === hit.pageStart && c.pageEnd === hit.pageEnd,
       );
-      if (!seen) citations.push({ filename: hit.filename, pageStart: hit.pageStart, pageEnd: hit.pageEnd });
+      if (!seen) {
+        citations.push({ filename: hit.filename, pageStart: hit.pageStart, pageEnd: hit.pageEnd, ...(hit.section ? { section: hit.section } : {}) });
+      }
     }
 
     return {

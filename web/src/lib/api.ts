@@ -2,10 +2,11 @@
 
 export type User = { email: string; company: string };
 
-export type Citation = { filename: string; pageStart: number; pageEnd: number };
+export type Citation = { filename: string; pageStart: number; pageEnd: number; section?: string };
 
 export type Answer = {
   answer: string;
+  evidence: string | null; // the source line(s) the answer rests on, word for word
   abstained: boolean;
   citations: Citation[];
   latencyMs: number | null;

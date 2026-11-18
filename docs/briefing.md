@@ -130,6 +130,7 @@ For every question it runs the **real pipeline**, then measures:
 | **Citation** | Did the answer cite a right page (exact, and within ±1 page)? |
 | **Exact number check** | Which numbers of the reference appear in the answer (decimal comma = dot). A rough second signal. |
 | **Abstention** | Accuracy, precision, recall; how many hallucinated (answered an unanswerable) and wrongly abstained. |
+| **Language** | Is the answer text in the question's language? Detected from the answer words (en/nl/fr), not Claude's own label. |
 | **Latency** | p50 / p95 / max, plus time per step: search, reranker, Claude. |
 | **Tokens + cost** | Real token counts × the price list, per question; judge cost shown separately. |
 
@@ -256,10 +257,20 @@ drop the JSON on the Evaluation page.
 
 ---
 
+## 13b. Stretch goals (all four done)
+
+- **Comparison of approaches with numbers**: the score progression table (38 → 48 → 57 → 62 → 76 → 81 → 86–90 %)
+  and Haiku vs Sonnet (90 % vs 57 % / 52 %, 12× the cost). Every number is an eval run.
+- **More precise citations**: section/table/figure name on each citation + the evidence quote (exact source line)
+  under each answer.
+- **Follow-up questions**: saved chats, follow-up rewritten into a complete question, last 3 turns as context.
+- **New document without re-processing**: sha256 per file, duplicates skipped, Docling + vision cached by hash.
+
 ## 14. Demo script (5 minutes)
 
 1. Log in → **Documents**: 9 manuals, status ready, upload box (PDF or ZIP).
-2. **New chat**: "f12 op de buitenunit, wat moet ik checken" → streams, Dutch, citation chips.
+2. **New chat**: "f12 op de buitenunit, wat moet ik checken" → streams, Dutch, citation chips with section names,
+   and the "From the manual" evidence quote.
 3. Follow-up: "and where is the pressure switch?" → understood from context.
 4. "how long is the warranty?" → **Not in the manuals**.
 5. A pictogram question ("mitsubishi ecodan screen has a little suitcase…") → vision at work.

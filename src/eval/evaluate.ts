@@ -21,6 +21,8 @@ export type EvalRow = {
   answerable: boolean;
   abstained: boolean;
   abstainedCorrectly: boolean; // abstained exactly when the question is not answerable
+  answerLanguage: string; // the language of the answer TEXT, detected here (en, nl, fr), not Claude's own label
+  languageMatch: boolean | null; // answered in the question's language (null = the question file gives no language)
   retrievalHit: boolean | null; // a right page was among the retrieved chunks (null = nothing to find)
   citationHit: boolean | null; // a right page was among the citations (null = nothing to find)
   citationNear: boolean | null; // a citation is the right document and within 1 page of a right page
@@ -68,6 +70,25 @@ function numberCheck(reference: string, answer: string): EvalRow["numbersFound"]
   if (expected.length === 0) return null;
   const given = new Set(numbers(answer));
   return { found: expected.filter((n) => given.has(n)).length, total: expected.length };
+}
+
+// Which language is this text in? Counts common words that belong to one of the three languages only.
+// Checked on the answer itself, so the eval does not just trust the language Claude says it used.
+const LANGUAGE_WORDS: Record<string, string[]> = {
+  en: ["the", "and", "of", "to", "with", "this", "check", "if", "are", "not", "for", "from", "it", "when", "then", "or"],
+  nl: ["het", "een", "van", "niet", "controleer", "wordt", "bij", "voor", "zijn", "met", "als", "dat", "deze", "naar", "de", "of", "en", "dan"],
+  fr: ["le", "la", "les", "des", "une", "est", "pas", "pour", "vérifiez", "avec", "dans", "sur", "du", "et", "ce", "si", "ou"],
+};
+
+export function detectLanguage(text: string): string {
+  const words = text.toLowerCase().match(/[a-zàâçéèêëîïôûùüÿœ]+/g) ?? [];
+  let best = "";
+  let bestScore = 0;
+  for (const [language, list] of Object.entries(LANGUAGE_WORDS)) {
+    const score = words.filter((w) => list.includes(w)).length;
+    if (score > bestScore) [best, bestScore] = [language, score];
+  }
+  return best;
 }
 
 const JUDGE_PROMPT = `You grade answers from a question-answering system for heat-pump technicians.
@@ -119,6 +140,8 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
     answerable: q.answerable,
     abstained: result.abstained,
     abstainedCorrectly: result.abstained === !q.answerable,
+    answerLanguage: detectLanguage(result.answer),
+    languageMatch: q.language ? detectLanguage(result.answer) === q.language : null,
     answer: result.answer,
     citations: result.citations,
     searches: result.searches,

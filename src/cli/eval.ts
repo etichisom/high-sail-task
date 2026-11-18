@@ -81,6 +81,7 @@ console.log(`
 Correct answers          ${fmt(summary.correct)} overall · answerable ${fmt(summary.answerableCorrect)} · partial ${summary.partial.count}
 Search found right page  ${fmt(summary.retrievalRecall)}   (retrieval recall)
 Cited right page         ${fmt(summary.citationExact)} exact · ${fmt(summary.citationNear)} within ±1 page
+Same language as asked   ${fmt(summary.languageMatch)}
 Numbers in answers       ${fmt(summary.numbersExact)} of the reference values (exact check)
 Abstention               accuracy ${fmt(abst.accuracy)} · precision ${fmt(abst.precision)} · recall ${fmt(abst.recall)}
                          hallucinated ${abst.hallucinated} · abstained wrongly ${abst.falseAbstain}

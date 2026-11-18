@@ -1,7 +1,7 @@
 // One chat: the questions and answers so far, and the box to ask the next (follow-up) question.
 // The answer text appears while Claude writes it (streamed); citations come when it is finished.
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, BookOpenText, Clock, FileText, Loader2, Search, SearchX } from "lucide-react";
+import { ArrowUp, BookOpenText, Clock, FileText, Loader2, Quote, Search, SearchX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -94,6 +94,7 @@ export function ChatView({ conversationId, onConversationStarted, onAnswered, on
         {
           role: "assistant",
           content: result.answer,
+          evidence: result.evidence,
           abstained: result.abstained,
           citations: result.citations,
           latencyMs: result.latencyMs,
@@ -241,13 +242,28 @@ function AnswerBlock({ message, streaming = false }: { message: Extract<Message,
           {message.content}
           {streaming && <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-foreground/60" />}
         </div>
+        {!streaming && !message.abstained && message.evidence && (
+          <blockquote className="flex gap-2 rounded-lg border-l-2 border-primary/40 bg-muted/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            <Quote className="mt-0.5 size-3 shrink-0" />
+            <span>
+              <span className="font-medium text-foreground">From the manual: </span>
+              {message.evidence}
+            </span>
+          </blockquote>
+        )}
         {!streaming && message.citations && message.citations.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {message.citations.map((c, i) => (
-              <Badge key={i} variant="secondary" className="max-w-full font-normal" title={`${c.filename}, ${pages(c)}`}>
+              <Badge
+                key={i}
+                variant="secondary"
+                className="h-auto max-w-full flex-wrap justify-start py-1 text-left font-normal whitespace-normal"
+                title={`${c.filename}, ${pages(c)}${c.section ? `, ${c.section}` : ""}`}
+              >
                 <FileText />
-                <span className="truncate">{c.filename.replace(/\.pdf$/i, "")}</span>
+                <span className="break-all">{c.filename.replace(/\.pdf$/i, "")}</span>
                 <span className="font-medium">{pages(c)}</span>
+                {c.section && <span className="text-muted-foreground">· {c.section.length > 70 ? `${c.section.slice(0, 67)}…` : c.section}</span>}
               </Badge>
             ))}
           </div>

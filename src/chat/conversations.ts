@@ -7,12 +7,23 @@ import { pool } from "../db.js";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FOLLOW_UP_TURNS = 3; // how many earlier questions and answers a follow-up gets as context
 
+// The citations column holds the citations and the evidence quote together: {"items": [...], "evidence": "..."}.
+// Older rows hold only the list of citations.
+type StoredCitations = AskResult["citations"] | { items: AskResult["citations"]; evidence: string } | null;
+
+function readCitations(stored: StoredCitations): { citations: AskResult["citations"] | null; evidence: string | null } {
+  if (stored === null) return { citations: null, evidence: null };
+  if (Array.isArray(stored)) return { citations: stored, evidence: null };
+  return { citations: stored.items, evidence: stored.evidence || null };
+}
+
 export type ConversationSummary = { id: string; title: string; updatedAt: string };
 
 export type SavedMessage = {
   role: "user" | "assistant";
   content: string;
   citations: AskResult["citations"] | null;
+  evidence: string | null; // the source line(s) the answer rests on, word for word
   abstained: boolean | null;
   latencyMs: number | null;
   costUsd: number | null;
@@ -60,7 +71,7 @@ export async function conversationMessages(tenantId: string, userId: string, id:
   const { rows } = await pool.query<{
     role: "user" | "assistant";
     content: string;
-    citations: AskResult["citations"] | null;
+    citations: StoredCitations;
     abstained: boolean | null;
     latency_ms: number | null;
     cost_usd: string | null;
@@ -73,7 +84,7 @@ export async function conversationMessages(tenantId: string, userId: string, id:
   return rows.map((row) => ({
     role: row.role,
     content: row.content,
-    citations: row.citations,
+    ...readCitations(row.citations),
     abstained: row.abstained,
     latencyMs: row.latency_ms,
     costUsd: row.cost_usd === null ? null : Number(row.cost_usd),
@@ -119,7 +130,7 @@ export async function saveTurn(tenantId: string, conversationId: string, questio
         tenantId,
         conversationId,
         result.answer,
-        JSON.stringify(result.citations),
+        JSON.stringify({ items: result.citations, evidence: result.evidence } satisfies StoredCitations),
         result.abstained,
         result.latencyMs,
         result.inputTokens,

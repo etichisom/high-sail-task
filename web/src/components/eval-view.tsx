@@ -20,6 +20,7 @@ type Summary = {
   retrievalRecall: Count;
   citationExact: Count;
   citationNear: Count;
+  languageMatch: Count;
   numbersExact: Count;
   abstention: { accuracy: Count; precision: Count; recall: Count; hallucinated: number; falseAbstain: number };
   latencyMs: { p50: number; p95: number; max: number; avg: number };
@@ -362,6 +363,7 @@ function RunReport({ run, onCancel, onDownload }: { run: Run; onCancel: () => vo
               <Line label="Time per question (avg)" value={`search ${sec(s.timeSplitMs.search)} · reranker ${sec(s.timeSplitMs.rerank)} · Claude ${sec(s.timeSplitMs.claude)} (${s.timeSplitMs.claudeTurns.toFixed(1)} turns)`} />
               <Line label="Abstention precision / recall" value={`${frac(s.abstention.precision)} / ${frac(s.abstention.recall)}`} />
               <Line label="Answerable questions correct" value={frac(s.answerableCorrect)} />
+              {s.languageMatch && <Line label="Answered in the question's language" value={`${frac(s.languageMatch)} (${pct(s.languageMatch)})`} />}
               <Line label="Crashed (counted wrong)" value={s.crashed.length ? s.crashed.join(", ") : "none"} />
             </CardContent>
           </Card>

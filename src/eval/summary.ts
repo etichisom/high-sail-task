@@ -13,6 +13,7 @@ export type EvalSummary = {
   retrievalRecall: Count; // search found a right page (recall over all retrieved chunks)
   citationExact: Count; // the answer cited a right page
   citationNear: Count; // the answer cited the right document within 1 page
+  languageMatch: Count; // answered in the question's language (questions with a language in the file)
   numbersExact: Count; // reference numbers found in the answers (all numbers of all answerable questions)
   abstention: {
     accuracy: Count; // abstained exactly when it should
@@ -54,6 +55,7 @@ export function summarize(rows: EvalRow[], crashed: string[]): EvalSummary {
     retrievalRecall: count(answerable.filter((r) => r.retrievalHit).length, answerable.length),
     citationExact: count(answerable.filter((r) => r.citationHit).length, answerable.length),
     citationNear: count(answerable.filter((r) => r.citationNear).length, answerable.length),
+    languageMatch: count(rows.filter((r) => r.languageMatch).length, rows.filter((r) => r.languageMatch !== null).length),
     numbersExact: count(
       withNumbers.reduce((sum, r) => sum + r.numbersFound!.found, 0),
       withNumbers.reduce((sum, r) => sum + r.numbersFound!.total, 0),
