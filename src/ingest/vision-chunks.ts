@@ -16,7 +16,8 @@ export async function addVisionChunks(
 ): Promise<VisionResult> {
   const hash = fileHash(pdfPath);
   const found = await pool.query<{ id: string }>(
-    "SELECT id FROM documents WHERE tenant_id = $1 AND file_hash = $2 AND status = 'ready'",
+    // No status check: the pipeline calls this while the document is still 'processing' (before it is ready)
+    "SELECT id FROM documents WHERE tenant_id = $1 AND file_hash = $2",
     [tenantId, hash],
   );
   const documentId = found.rows[0]?.id;

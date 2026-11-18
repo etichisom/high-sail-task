@@ -10,7 +10,14 @@ export type IngestResult =
   | { status: "skipped"; documentId: string }
   | { status: "ready"; documentId: string; pages: number; chunks: number; visionPages: VisionPage[] };
 
-export async function ingestDocument(tenantId: string, pdfPath: string): Promise<IngestResult> {
+// markReady: false = store the chunks but leave the document 'processing'. The pipeline sets 'ready' itself,
+// after vision and embeddings are done, so a half-ingested document is never shown as ready.
+export async function ingestDocument(
+  tenantId: string,
+  pdfPath: string,
+  options: { markReady?: boolean } = {},
+): Promise<IngestResult> {
+  const finalStatus = options.markReady === false ? "processing" : "ready";
   const filename = basename(pdfPath);
   const hash = fileHash(pdfPath);
 
@@ -56,8 +63,8 @@ export async function ingestDocument(tenantId: string, pdfPath: string): Promise
         );
       }
       await client.query(
-        "UPDATE documents SET status = 'ready', page_count = $2, progress = NULL WHERE id = $1",
-        [documentId, pageCount],
+        "UPDATE documents SET status = $3, page_count = $2, progress = NULL WHERE id = $1",
+        [documentId, pageCount, finalStatus],
       );
       await client.query("COMMIT");
     } catch (error) {

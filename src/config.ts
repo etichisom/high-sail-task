@@ -35,4 +35,13 @@ export const config = {
   visionConcurrency: Number(process.env.VISION_CONCURRENCY ?? 4), // pages sent to Claude at the same time
     // Eval (Lab 12): a stronger model grades the answers against the reference answers
   judgeModel: process.env.JUDGE_MODEL ?? "claude-sonnet-5-5",
+  // Upload API (Lab 11 web part): plain node:http server
+  apiPort: Number(process.env.API_PORT ?? 3000),
+  maxUploadMb: Number(process.env.MAX_UPLOAD_MB ?? 300), // biggest request body the API reads (a PDF or a ZIP)
+  // ZIP limits: a ZIP is opened by the server, so these stop a huge or hostile archive
+  zipMaxPdfs: Number(process.env.ZIP_MAX_PDFS ?? 100), // PDFs taken from one ZIP
+  zipMaxPdfMb: Number(process.env.ZIP_MAX_PDF_MB ?? 100), // size of one PDF inside a ZIP
+  zipMaxTotalMb: Number(process.env.ZIP_MAX_TOTAL_MB ?? 500), // all PDFs of one ZIP together
+  // Worker: how long it sleeps when the queue is empty
+  workerPollSeconds: Number(process.env.WORKER_POLL_SECONDS ?? 5),
 };

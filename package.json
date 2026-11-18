@@ -13,7 +13,9 @@
     "search": "tsx src/cli/search.ts",
     "ask": "tsx src/cli/ask.ts",
     "eval": "tsx src/cli/eval.ts",
-    "vision": "tsx src/cli/vision.ts"
+    "vision": "tsx src/cli/vision.ts",
+    "worker": "tsx src/worker/index.ts",
+    "api": "tsx src/api/server.ts"
   },
   "keywords": [],
   "author": "",
