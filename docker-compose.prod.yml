@@ -1,0 +1,65 @@
+# Production on one server: docker compose -f docker-compose.prod.yml up -d --build
+# Only the app is reachable, and only from the server itself (127.0.0.1:3100): the reverse proxy
+# (nginx or Caddy, already on the server) sends https://highsail-task.lernie.net to it.
+# Postgres and Docling have no published ports at all.
+name: highsail
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      POSTGRES_USER: manual
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: manual
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro # creates the tables on the first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manual -d manual"]
+      interval: 5s
+      retries: 20
+
+  docling:
+    image: quay.io/docling-project/docling-serve
+    restart: unless-stopped
+    environment:
+      DOCLING_SERVE_ENG_LOC_NUM_WORKERS: "1"
+    mem_limit: ${DOCLING_MEM:-4g} # big PDFs are converted in parts (DOCLING_PAGES_PER_PART) to stay under this
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://manual:${POSTGRES_PASSWORD}@db:5432/manual
+      DOCLING_URL: http://docling:5001
+    ports:
+      - "127.0.0.1:3100:3000"
+    mem_limit: ${API_MEM:-3g}
+    volumes:
+      - ./store:/data/store # uploads, caches, models, eval reports: shared with the worker
+      - ./data:/app/data:ro # optional: the question sets for the Evaluation page
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npx", "tsx", "src/worker/index.ts"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://manual:${POSTGRES_PASSWORD}@db:5432/manual
+      DOCLING_URL: http://docling:5001
+      DOCLING_PAGES_PER_PART: ${DOCLING_PAGES_PER_PART:-10} # small parts: Docling stays under its memory limit
+    mem_limit: ${WORKER_MEM:-3g}
+    volumes:
+      - ./store:/data/store
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

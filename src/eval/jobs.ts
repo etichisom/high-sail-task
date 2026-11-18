@@ -30,7 +30,6 @@ export type EvalJob = {
 // Question sets on the server (data/ is the data pack, not in git), offered in the page next to uploading a file
 const BUILT_IN_SETS: Record<string, { file: string; label: string }> = {
   "dev-questions": { file: "data/dev-questions.json", label: "Dev questions (data pack)" },
-  "holdout-questions": { file: "data/holdout-questions.json", label: "Held-out questions" },
 };
 
 export function builtInSets(): { id: string; label: string; questions: number }[] {
