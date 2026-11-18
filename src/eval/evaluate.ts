@@ -2,7 +2,7 @@
 // Four checks: did search find the right page, did the answer cite it, is the answer correct, abstain or not.
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
-import { ask, costUsd, type Citation } from "../answer/ask.js";
+import { ask, costUsd, type AskResult, type Citation } from "../answer/ask.js";
 import { config } from "../config.js";
 
 // One entry of data/dev-questions.json
@@ -28,6 +28,7 @@ export type EvalRow = {
   answer: string;
   citations: Citation[];
   searches: string[]; // extra searches the answer agent made
+  timings: AskResult["timings"]; // where the time went (search, reranker, Claude)
   latencyMs: number;
   answerCostUsd: number | null;
   judgeCostUsd: number | null;
@@ -90,6 +91,7 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
     answer: result.answer,
     citations: result.citations,
     searches: result.searches,
+    timings: result.timings,
     latencyMs: result.latencyMs,
     answerCostUsd: result.costUsd,
   };

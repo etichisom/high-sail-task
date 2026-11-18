@@ -19,6 +19,8 @@ export type AskResult = {
   retrieved: Citation[]; // every chunk search found (in order), so the eval can check the search on its own
   latencyMs: number; // whole question: search + Claude
   searchMs: number;
+  // Where the time went, summed over all searches and turns (to find what makes an answer slow)
+  timings: { searchMs: number; rerankMs: number; claudeMs: number; claudeTurns: number };
   inputTokens: number;
   outputTokens: number;
   costUsd: number | null; // null = no price known for this model
@@ -92,10 +94,20 @@ type Hit = Awaited<ReturnType<typeof hybridSearch>>[number];
 
 // Hybrid search (~40 candidates) → reranker → the best few, as numbered sources.
 // `known` holds every chunk already shown to Claude, so a new search only adds new chunks.
-async function findSources(tenantId: string, query: string, known: Hit[]): Promise<string> {
-  const candidates = await hybridSearch(tenantId, query, config.rerankCandidates);
+async function findSources(
+  tenantId: string,
+  query: string,
+  known: Hit[],
+  timings: AskResult["timings"],
+  candidateCount = config.rerankCandidates,
+): Promise<string> {
+  let t = Date.now();
+  const candidates = await hybridSearch(tenantId, query, candidateCount);
+  timings.searchMs += Date.now() - t;
   const fresh = candidates.filter((hit) => !known.some((k) => k.id === hit.id));
+  t = Date.now();
   const best = await rerank(query, fresh, config.answerSources);
+  timings.rerankMs += Date.now() - t;
   const first = known.length;
   known.push(...best);
   if (best.length === 0) return "No new sources found.";
@@ -112,7 +124,8 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
 
   // 1. Retrieve + 2. Augment: the best chunks for the question, numbered so Claude can cite them
   const hits: Hit[] = [];
-  const sources = await findSources(tenantId, question, hits);
+  const timings: AskResult["timings"] = { searchMs: 0, rerankMs: 0, claudeMs: 0, claudeTurns: 0 };
+  const sources = await findSources(tenantId, question, hits, timings);
   const searchMs = Date.now() - started;
 
   // 3. Generate, as a small agent: Claude answers, or first calls search_manuals with other words.
@@ -132,6 +145,7 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
   let outputTokens = 0;
 
   for (let turn = 0; turn <= MAX_SEARCHES + 2; turn++) {
+    const claudeStarted = Date.now();
     const response = await client.messages.parse({
       model: config.answerModel,
       max_tokens: 16000,
@@ -143,6 +157,8 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
       ...(searches.length >= MAX_SEARCHES ? { tool_choice: { type: "none" as const } } : {}),
       messages,
     });
+    timings.claudeMs += Date.now() - claudeStarted;
+    timings.claudeTurns++;
     inputTokens += response.usage.input_tokens;
     outputTokens += response.usage.output_tokens;
 
@@ -159,7 +175,7 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
           continue;
         }
         searches.push(query);
-        results.push({ type: "tool_result", tool_use_id: block.id, content: await findSources(tenantId, query, hits) });
+        results.push({ type: "tool_result", tool_use_id: block.id, content: await findSources(tenantId, query, hits, timings, config.rerankCandidatesExtra) });
       }
       messages.push({ role: "user", content: results }); // all results of one turn in one message
       continue;
@@ -189,6 +205,7 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
       retrieved: hits.map((hit) => ({ filename: hit.filename, pageStart: hit.pageStart, pageEnd: hit.pageEnd })),
       latencyMs: Date.now() - started,
       searchMs,
+      timings,
       inputTokens,
       outputTokens,
       costUsd: costUsd(config.answerModel, inputTokens, outputTokens),

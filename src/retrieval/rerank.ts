@@ -32,7 +32,7 @@ export async function rerankScores(query: string, texts: string[]): Promise<numb
   const scores: number[] = [];
   // One pair at a time: on CPU that beat batching for BGE-M3 (no padding waste)
   for (const text of texts) {
-    const inputs = tokenizer(query, { text_pair: text, truncation: true, max_length: 512 });
+    const inputs = tokenizer(query, { text_pair: text, truncation: true, max_length: config.rerankMaxTokens });
     const { logits } = await model(inputs);
     const logit = (logits.tolist() as number[][])[0]![0]!;
     scores.push(1 / (1 + Math.exp(-logit))); // sigmoid: the raw score becomes 0..1

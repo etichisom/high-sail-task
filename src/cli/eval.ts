@@ -74,6 +74,14 @@ const judgeCost = rows.reduce((sum, r) => sum + (r.judgeCostUsd ?? 0), 0);
 
 const total = rows.length + crashed.length; // crashed questions are in the total, so they lower the score
 
+// Average time per question split by step, so we know what to speed up
+function timeSplit(): string {
+  if (rows.length === 0) return "-";
+  const avg = (pick: (t: EvalRow["timings"]) => number) => rows.reduce((sum, r) => sum + pick(r.timings), 0) / rows.length;
+  const s = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  return `search ${s(avg((t) => t.searchMs))}, reranker ${s(avg((t) => t.rerankMs))}, Claude ${s(avg((t) => t.claudeMs))} in ${avg((t) => t.claudeTurns).toFixed(1)} turns`;
+}
+
 const summary = {
   questions: total,
   crashed,
@@ -95,6 +103,7 @@ Search found right page  ${summary.retrievalHit}
 Cited right page         ${summary.citationHit}
 Abstention correct       ${summary.abstentionAccuracy} (unanswerable abstained: ${summary.unanswerableAbstained})
 Latency                  p50 ${(p50 / 1000).toFixed(1)}s, p90 ${(p90 / 1000).toFixed(1)}s
+Time per question (avg)  ${timeSplit()}
 Cost per question        $${summary.costPerQuestionUsd.toFixed(5)} (judge, eval only: $${judgeCost.toFixed(4)} total)`);
 
 if (crashed.length > 0) console.log(`Crashed (counted wrong)  ${crashed.join(", ")}`);
