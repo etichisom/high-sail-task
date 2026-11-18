@@ -17,6 +17,7 @@
     "worker": "tsx src/worker/index.ts",
     "api": "tsx src/api/server.ts",
     "add-user": "tsx src/cli/add-user.ts",
+    "set-password": "tsx src/cli/set-password.ts",
     "web:install": "npm --prefix web install",
     "web:build": "npm --prefix web run build",
     "web:dev": "npm --prefix web run dev"
