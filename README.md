@@ -266,6 +266,30 @@ Keep it off when hosted, and set `COOKIE_SECURE=true` behind HTTPS.
 
 Settings (models, candidates, effort, limits) are in `src/config.ts` and can be changed with environment variables.
 
+### Running new questions (for example a held-out set)
+Start the database first (`docker compose up -d`), then from the project folder:
+
+```bash
+# one question: answer, sources (document + page), time and cost
+npm run ask -- --tenant demo "f12 op de buitenunit, wat moet ik checken"
+
+# a question file in the dev-questions.json format: per-question table + summary, report saved in store/eval/
+npm run eval -- --tenant demo --file their-questions.json
+
+# every question 3 times (stability), or only a few questions again
+npm run eval -- --tenant demo --file their-questions.json --runs 3
+npm run eval -- --tenant demo --file their-questions.json --only q-03,q-07
+
+# questions without reference answers (one per line in a text file): answer them one by one
+while IFS= read -r q; do npm run -s ask -- --tenant demo "$q"; echo "-----"; done < their-questions.txt
+```
+
+The question file needs `question` and `answerable` (true/false) per question, and `reference_answer` when it is
+answerable; `id`, `language` and `sources` (doc + pages) are optional. With `sources`, the report also checks whether
+search found and the answer cited the right page. About 3–8 s and ~$0.0035 per question including the judge.
+
+The same works in the browser: **Evaluation** page → drop the JSON file (live at https://highsail-task.lernie.net).
+
 ## Project layout
 ```
 src/ingest/      docling.ts (convert, cache, parts) · chunk.ts · needs-vision.ts (routing) · vision.ts · vision-chunks.ts

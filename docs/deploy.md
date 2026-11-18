@@ -39,7 +39,7 @@ POSTGRES_PASSWORD=<a long random password: openssl rand -hex 24>
 COOKIE_SECURE=true
 EOF
 chmod 600 .env
-mkdir -p data   # optional: copy dev-questions.json / holdout-questions.json here for the Evaluation page
+mkdir -p data   # optional: copy dev-questions.json here for the Evaluation page
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f api   # wait for "[api] listening"
 curl -s http://127.0.0.1:3100/health                    # {"ok":true}

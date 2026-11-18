@@ -112,4 +112,4 @@ console.log(`\nreport: ${report}`);
 await pool.end();
 
 
-// npm run -s eval -- --tenant demo --questions data/holdout-questions.json
+// npm run -s eval -- --tenant demo --file data/own-test-questions.json
