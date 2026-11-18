@@ -173,6 +173,8 @@ reason, and download the report.
 
 ### Model choice (measured, not assumed)
 
+Measured while the pipeline still had the reranker (so all three rows are comparable with each other):
+
 | Answer model | Correct | Cost / question | p50 |
 |---|---|---|---|
 | **Claude Haiku 5.5** | 62 % → 90 % with the agent | **$0.0012** | **10 s** |
@@ -180,7 +182,8 @@ reason, and download the report.
 | Claude Sonnet 5.5 + agent | 52 % (kept searching, 7 crashes before the fix) | $0.063 | 12 s |
 
 The remaining errors came from what the model *sees*, not how smart it is: better retrieval moved the score, a bigger
-model did not. Haiku stays the answer model. The judge is Sonnet 5.5: it gave the same verdict as Opus 5.5 on all
+model did not. Haiku stays the answer model. **Today** (reranker removed, all later fixes in): Haiku scores
+**19/21 (90 %)** at **$0.0016** per question and **p50 4.5 s**. The judge is Sonnet 5.5: it gave the same verdict as Opus 5.5 on all
 21 questions at half the price.
 
 ### Cost
@@ -203,9 +206,14 @@ hosted or GPU reranker can come back, decided by the eval.
 - **dev-05 (glycol %)** is labelled "not covered", but the Midea manual says "never exceed 35 %" (PDF p41). The system
   answers that, naming the Midea manual. The label seems to assume a Panasonic installation; the question names no brand.
 - **dev-19 (valve between buffer tank and 3-way valve)** is ambiguous: the question names no installation, and the
-  P&ID has two 3-way valves next to the buffer tank (TV-201 and MV-401). The system abstains instead of guessing.
-- One question (dev-04, H62 steps) passes about 2 runs out of 3: the judge wants one specific test step.
-- In a real product the app would know which installation the technician is at; that removes both ambiguities.
+  P&ID has two 3-way valves next to the buffer tank (TV-201 and MV-401). Results vary per run: sometimes correct
+  (V-202, butterfly valve), sometimes it abstains, and once it named the valve next to the other 3-way valve. That
+  last case is a wrong answer, the kind we most want to avoid.
+- **dev-04 (H62 steps)** is flaky: correct in most runs, "partial" in others when it shortens the flow-switch test.
+- **hard-14 (which brand of heat pump is on the roof?)**: the drawing names no brand. The system says so, but adds the
+  capacity and refrigerant instead of a clean "not in the manuals", so it counts as not abstaining.
+- In a real product the app would know which installation the technician is at; that removes the dev-05 and
+  dev-19 ambiguity.
 
 ---
 
@@ -271,7 +279,7 @@ src/chat/        conversations.ts (saved chats, follow-up context)
 web/             React + shadcn/ui web app (Vite): src/App.tsx · components/chat-view.tsx · documents-view.tsx · eval-view.tsx · auth-page.tsx
 src/cli/         thin entry points for every command
 db/schema.sql    tenants, users, sessions, documents, chunks (vector + tsvector), conversations, messages
-docs/            lab notes with every decision and measurement
+docs/            inventory.md (documents and why each question is hard) · deploy.md (production setup)
 ```
 
 ## Next steps

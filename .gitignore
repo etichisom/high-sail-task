@@ -4,3 +4,9 @@ store/
 data/
 .DS_Store
 web/dist/
+
+# Private notes (kept locally, not in git)
+TICKETS.md
+docs/briefing.md
+docs/lab-notes.md
+docs/lab-9.md
