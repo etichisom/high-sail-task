@@ -320,29 +320,3 @@ src/cli/         thin entry points for every command
 db/schema.sql    tenants, users, sessions, documents, chunks (vector + tsvector), conversations, messages
 docs/            inventory.md (documents and why each question is hard) · deploy.md (production setup)
 ```
-
-## Next steps
-1. **Installation context**: let the technician pick the unit/site, so ambiguous questions (dev-05, dev-19) resolve.
-2. **Re-test a reranker at scale**: with thousands of documents per company search gets noisier; a hosted or GPU
-   reranker (fast, unlike the CPU one removed here) comes back only if the eval shows it pays off.
-3. **Feedback and monitoring**: 👍/👎 on answers (the `messages.feedback` column exists), and a dashboard of latency,
-   cost and abstention rate from the saved messages.
-4. **Bigger test set**, built from real (logged) questions, to keep measuring.
-5. **Production hardening**: login rate limit in Redis or the database (now in memory), password reset, roles, HTTPS.
-6. **Uploads to object storage**: today the file travels in the upload request to the API, which checks it and writes it
-   to local disk, and the worker reads it there. In production the browser gets a short-lived **presigned URL** and
-   uploads straight to a private bucket (S3 / R2 / GCS, key `tenants/<id>/uploads/<id>.pdf`); the API only records it
-   and queues it, and any worker downloads it and runs the same checks (real PDF, size, hash for duplicates, safe ZIP
-   unpacking). The API then never holds file bytes in memory, and API and workers can run on separate machines.
-   Locally the same code can run against MinIO (S3-compatible, in Docker).
-7. **Scale (500 companies × 10,000 documents = 5 M documents)**. Measured here: ~375 chunks per manual and ~16 KB
-   per chunk, so copying everything per company would mean ~1.9 billion chunks (~29 TB) and ~$127k of vision. Changes:
-   - **Process each unique file once and share it** (files are already keyed by sha256; a `company_documents` link
-     table decides who sees what; private drawings stay private). Most companies use the same manufacturer manuals.
-   - **Search a small set**: filter by the technician's installation first, then vector + full-text inside it.
-   - **Partition the chunks** (per file group / per company) with an HNSW + GIN index per partition, `halfvec`
-     (16-bit) vectors, pgvector iterative scan or pgvectorscale (DiskANN); a dedicated vector database per
-     namespace if Postgres is outgrown (all search already goes through `hybrid-search.ts`).
-   - **Ingest per page on GPU workers** (Docling and embeddings as GPU services), a managed queue with
-     priorities and retries, presigned uploads to object storage, vision through the Batch API.
-   - **Caches, per-company rate limits and budgets, eval in CI and monitoring** of abstention, latency and cost.
