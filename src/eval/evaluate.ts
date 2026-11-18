@@ -23,13 +23,18 @@ export type EvalRow = {
   abstainedCorrectly: boolean; // abstained exactly when the question is not answerable
   retrievalHit: boolean | null; // a right page was among the retrieved chunks (null = nothing to find)
   citationHit: boolean | null; // a right page was among the citations (null = nothing to find)
-  correct: boolean; // the judge's verdict (for unanswerable questions: did it abstain)
+  citationNear: boolean | null; // a citation is the right document and within 1 page of a right page
+  verdict: "correct" | "partial" | "wrong"; // the judge's grade (unanswerable questions: correct = abstained)
+  correct: boolean; // verdict === "correct": only fully correct answers count
+  numbersFound: { found: number; total: number } | null; // exact check: numbers of the reference found in the answer
   judgeReason: string;
   answer: string;
   citations: Citation[];
   searches: string[]; // extra searches the answer agent made
   timings: AskResult["timings"]; // where the time went (search, reranker, Claude)
   latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
   answerCostUsd: number | null;
   judgeCostUsd: number | null;
 };
@@ -42,19 +47,45 @@ function matches(found: Citation, expected: EvalQuestion["sources"]): boolean {
   );
 }
 
+// Like matches(), but one page off is fine (a fact at the bottom of a page, a table running over two pages)
+function near(found: Citation, expected: EvalQuestion["sources"]): boolean {
+  return expected.some(
+    (source) =>
+      source.doc === found.filename && source.pages.some((page) => page >= found.pageStart - 1 && page <= found.pageEnd + 1),
+  );
+}
+
+// The exact check next to the judge: which numbers of the reference answer (values like 35, 1.5, 0.25) appear in the
+// answer? Decimal commas count as dots ("1,5" = "1.5"). Single digits are skipped: they are often step numbers.
+function numbers(text: string): string[] {
+  return [...text.replace(/(\d),(\d)/g, "$1.$2").matchAll(/\d+(?:\.\d+)?/g)]
+    .map((m) => String(Number(m[0])))
+    .filter((n) => n.length > 1 || n.includes("."));
+}
+
+function numberCheck(reference: string, answer: string): EvalRow["numbersFound"] {
+  const expected = [...new Set(numbers(reference))];
+  if (expected.length === 0) return null;
+  const given = new Set(numbers(answer));
+  return { found: expected.filter((n) => given.has(n)).length, total: expected.length };
+}
+
 const JUDGE_PROMPT = `You grade answers from a question-answering system for heat-pump technicians.
 You get the question, a reference answer written by an expert, and the system's answer.
-The answer is correct when it gives the key facts of the reference answer (values, codes, steps that matter) and contradicts none of them.
-Extra correct details are fine. A different language than the reference is fine. Missing the key fact, a wrong value, or "not covered" when the reference has an answer is incorrect.
+Grade it:
+- "correct": it gives the key facts of the reference answer (values, codes, steps that matter) and contradicts none of them.
+- "partial": it gives some key facts but misses others (e.g. one of two values, part of the steps), with nothing wrong.
+- "wrong": it misses the key fact, gives a wrong value, or says "not covered" when the reference has an answer.
+Extra correct details are fine. A different language than the reference is fine.
 Give a one-sentence reason.`;
 
 const JUDGE_FORMAT = jsonSchemaOutputFormat({
   type: "object",
   properties: {
     reason: { type: "string" },
-    correct: { type: "boolean" },
+    verdict: { type: "string", enum: ["correct", "partial", "wrong"] },
   },
-  required: ["reason", "correct"],
+  required: ["reason", "verdict"],
   additionalProperties: false,
 });
 
@@ -93,6 +124,8 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
     searches: result.searches,
     timings: result.timings,
     latencyMs: result.latencyMs,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
     answerCostUsd: result.costUsd,
   };
 
@@ -102,7 +135,10 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
       ...base,
       retrievalHit: null,
       citationHit: null,
+      citationNear: null,
+      verdict: result.abstained ? "correct" : "wrong",
       correct: result.abstained,
+      numbersFound: null,
       judgeReason: result.abstained ? "abstained as expected" : "answered a question the manuals do not cover",
       judgeCostUsd: 0,
     };
@@ -111,10 +147,20 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
   // Answerable but abstained: wrong, no judge needed either
   const retrievalHit = result.retrieved.some((found) => matches(found, q.sources));
   const citationHit = result.citations.some((found) => matches(found, q.sources));
+  const citationNear = result.citations.some((found) => near(found, q.sources));
+  const numbersFound = numberCheck(q.reference_answer, result.answer);
+  const checks = { retrievalHit, citationHit, citationNear, numbersFound };
   if (result.abstained) {
-    return { ...base, retrievalHit, citationHit, correct: false, judgeReason: "abstained, but the manuals cover it", judgeCostUsd: 0 };
+    return { ...base, ...checks, verdict: "wrong", correct: false, judgeReason: "abstained, but the manuals cover it", judgeCostUsd: 0 };
   }
 
-  const verdict = await judge(q, result.answer);
-  return { ...base, retrievalHit, citationHit, correct: verdict.correct, judgeReason: verdict.reason, judgeCostUsd: verdict.costUsd };
+  const graded = await judge(q, result.answer);
+  return {
+    ...base,
+    ...checks,
+    verdict: graded.verdict,
+    correct: graded.verdict === "correct",
+    judgeReason: graded.reason,
+    judgeCostUsd: graded.costUsd,
+  };
 }

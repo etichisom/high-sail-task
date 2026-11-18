@@ -12,7 +12,7 @@ export default defineConfig({
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
   server: {
     proxy: Object.fromEntries(
-      ["/auth", "/me", "/documents", "/ask", "/conversations", "/health"].map((p) => [p, api]),
+      ["/auth", "/me", "/documents", "/ask", "/conversations", "/evals", "/health"].map((p) => [p, api]),
     ),
   },
 });

@@ -20,6 +20,8 @@ import { createSession, deleteSession, findSession, type SessionUser } from "../
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { findTenant } from "../tenants.js";
+import { builtInSets, cancelJob, findJob, listJobs, loadBuiltInSet, publicJob, startEval } from "../eval/jobs.js";
+import { parseQuestions } from "../eval/summary.js";
 import { savePdfUpload, saveZipUpload, UploadError, type UploadResult } from "./upload.js";
 
 const MB = 1024 * 1024;
@@ -372,6 +374,45 @@ async function conversationsRoute(req: IncomingMessage, res: ServerResponse, id:
   throw new HttpError(405, "use GET or DELETE");
 }
 
+// Evals from the web app. GET /evals: this company's runs and the question sets on the server.
+// POST /evals {"name", "questions": [...]} or {"set": "dev-questions"}: start a run. GET /evals/<id>: progress and results.
+// POST /evals/<id>/cancel: stop after the current question.
+async function evalsRoute(req: IncomingMessage, res: ServerResponse, rest: string, method: string): Promise<void> {
+  const tenantId = await tenantFromRequest(req);
+  if (rest === "") {
+    if (method === "GET") {
+      return send(res, 200, { runs: listJobs(tenantId).map((job) => publicJob(job, false)), sets: builtInSets() });
+    }
+    if (method !== "POST") throw new HttpError(405, "use GET or POST");
+    const body = await readJson(req, 2 * MB);
+    const setId = textField(body, "set");
+    let questions;
+    try {
+      questions = setId ? loadBuiltInSet(setId) : parseQuestions((body as { questions?: unknown } | null)?.questions);
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : "invalid questions");
+    }
+    if (!questions) throw new HttpError(404, "no such question set");
+    try {
+      const job = startEval(tenantId, setId || textField(body, "name") || "uploaded questions", questions);
+      return send(res, 202, publicJob(job, true));
+    } catch (error) {
+      throw new HttpError(409, error instanceof Error ? error.message : "could not start the eval");
+    }
+  }
+  const [id, action] = rest.split("/");
+  const job = findJob(tenantId, id ?? "");
+  if (!job) throw new HttpError(404, "no such eval run");
+  if (action === "cancel") {
+    if (method !== "POST") throw new HttpError(405, "use POST");
+    cancelJob(job);
+    return send(res, 200, publicJob(job, true));
+  }
+  if (action !== undefined) throw new HttpError(404, "not found");
+  if (method !== "GET") throw new HttpError(405, "use GET");
+  send(res, 200, publicJob(job, true));
+}
+
 // GET for the web app. Built files (/assets/...) are cached for a year: their names change with every build.
 // Any other path gets index.html, so a reload on a page of the app still works.
 async function sendWebFile(res: ServerResponse, pathname: string): Promise<void> {
@@ -426,6 +467,9 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (url.pathname === "/ask/stream") {
     if (method !== "POST") throw new HttpError(405, "use POST");
     return askStream(req, res);
+  }
+  if (url.pathname === "/evals" || url.pathname.startsWith("/evals/")) {
+    return evalsRoute(req, res, url.pathname.slice("/evals".length).replace(/^\//, ""), method);
   }
   if (url.pathname === "/conversations") return conversationsRoute(req, res, null, method);
   if (url.pathname.startsWith("/conversations/")) {

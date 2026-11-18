@@ -1,10 +1,11 @@
 // The whole web app: the login page, or the workspace (chats on the left, chat or documents on the right)
 import { useCallback, useEffect, useState } from "react";
-import { BookOpenText, FileText, Loader2, LogOut, Menu, MessageSquarePlus, MessagesSquare, Trash2, X } from "lucide-react";
+import { BookOpenText, FileText, FlaskConical, Loader2, LogOut, Menu, MessageSquarePlus, MessagesSquare, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AuthPage } from "@/components/auth-page";
 import { ChatView } from "@/components/chat-view";
 import { DocumentsView } from "@/components/documents-view";
+import { EvalView } from "@/components/eval-view";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,7 +44,7 @@ export default function App() {
 }
 
 function Workspace({ user, onLoggedOut }: { user: User; onLoggedOut: () => void }) {
-  const [view, setView] = useState<"chat" | "documents">("chat");
+  const [view, setView] = useState<"chat" | "documents" | "eval">("chat");
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [current, setCurrent] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false); // the sidebar on small screens
@@ -107,6 +108,9 @@ function Workspace({ user, onLoggedOut }: { user: User; onLoggedOut: () => void 
       </Button>
       <Button variant={view === "documents" ? "secondary" : "ghost"} className="justify-start" onClick={() => { setView("documents"); setMenuOpen(false); }}>
         <FileText /> Documents
+      </Button>
+      <Button variant={view === "eval" ? "secondary" : "ghost"} className="justify-start" onClick={() => { setView("eval"); setMenuOpen(false); }}>
+        <FlaskConical /> Evaluation
       </Button>
 
       <div className="mt-3 flex items-center gap-2 px-2 text-xs font-medium text-muted-foreground">
@@ -178,13 +182,17 @@ function Workspace({ user, onLoggedOut }: { user: User; onLoggedOut: () => void 
             <Menu />
           </Button>
           <span className="truncate text-sm font-medium">
-            {view === "documents" ? "Documents" : (conversations.find((c) => c.id === current)?.title ?? "New chat")}
+            {view === "documents" ? "Documents" : view === "eval" ? "Evaluation" : (conversations.find((c) => c.id === current)?.title ?? "New chat")}
           </span>
         </header>
         <div className="min-h-0 flex-1">
           {view === "documents" ? (
             <div className="h-full overflow-y-auto">
               <DocumentsView onLoggedOut={loggedOut} />
+            </div>
+          ) : view === "eval" ? (
+            <div className="h-full overflow-y-auto">
+              <EvalView onLoggedOut={loggedOut} />
             </div>
           ) : (
             <ChatView

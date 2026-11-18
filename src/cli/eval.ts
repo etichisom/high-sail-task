@@ -1,17 +1,20 @@
 // Run all dev questions and report quality, latency and cost.
-// Usage: npm run eval -- --tenant <company name> [--questions data/dev-questions.json] [--only dev-03,dev-17] [--runs 3]
+// Usage: npm run eval -- --tenant <company name> [--file data/dev-questions.json] [--only dev-03,dev-17] [--runs 3]
+// (--questions is the same as --file)
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { evaluateQuestion, type EvalQuestion, type EvalRow } from "../eval/evaluate.js";
+import { fmt, parseQuestions, summarize } from "../eval/summary.js";
 import { findTenant } from "../tenants.js";
 
 const { values } = parseArgs({
   options: {
     tenant: { type: "string" },
-    questions: { type: "string", default: "data/dev-questions.json" },
+    file: { type: "string" },
+    questions: { type: "string" },
     only: { type: "string" }, // e.g. "dev-03,dev-17" to rerun a few questions cheaply
     // Claude's answers vary a little per run, so one run can flip a question. Several runs give a fair average.
     runs: { type: "string", default: "1" },
@@ -28,7 +31,14 @@ if (!tenantId) {
   process.exit(1);
 }
 
-let questions: EvalQuestion[] = JSON.parse(readFileSync(values.questions, "utf8"));
+const file = values.file ?? values.questions ?? "data/dev-questions.json";
+let questions: EvalQuestion[];
+try {
+  questions = parseQuestions(JSON.parse(readFileSync(file, "utf8")));
+} catch (error) {
+  console.error(`${file}: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 if (values.only) {
   const ids = values.only.split(",");
   questions = questions.filter((q) => ids.includes(q.id));
@@ -41,7 +51,7 @@ const rows: EvalRow[] = [];
 const crashed: string[] = []; // questions that threw an error: they count as wrong, not as "left out"
 const results = new Map<string, string>(); // per question: "✓✓✗" over the runs
 for (let run = 1; run <= runs; run++) {
-console.log(`\n${runs > 1 ? `run ${run}/${runs}\n` : ""}id      ok  search cite  abst  time    cost      question`);
+console.log(`\n${runs > 1 ? `run ${run}/${runs}\n` : ""}id      grade      search cite  abst  time    cost      question`);
 for (const q of questions) {
   try {
     const row = await evaluateQuestion(tenantId, q);
@@ -49,7 +59,7 @@ for (const q of questions) {
     const mark = (value: boolean | null) => (value === null ? "-" : value ? "yes" : "NO").padEnd(5);
     const cost = row.answerCostUsd === null ? "?" : `$${row.answerCostUsd.toFixed(5)}`;
     console.log(
-      `${row.id}  ${row.correct ? "✓" : "✗"}   ${mark(row.retrievalHit)}  ${mark(row.citationHit)} ${mark(row.abstainedCorrectly)} ${(row.latencyMs / 1000).toFixed(1).padStart(5)}s  ${cost.padEnd(8)}  ${q.question.slice(0, 50)}`,
+      `${row.id}  ${(row.correct ? "✓ " : row.verdict === "partial" ? "~ " : "✗ ") + row.verdict.padEnd(9)}${mark(row.retrievalHit)}  ${mark(row.citationHit)} ${mark(row.abstainedCorrectly)} ${(row.latencyMs / 1000).toFixed(1).padStart(5)}s  ${cost.padEnd(8)}  ${q.question.slice(0, 50)}`,
     );
     if (row.searches.length > 0) console.log(`        searched again: ${row.searches.map((q) => `"${q}"`).join(", ")}`);
     if (!row.correct) console.log(`        → ${row.judgeReason}`);
@@ -62,49 +72,22 @@ for (const q of questions) {
 }
 }
 
-// Totals. Percentages only count questions where the check applies.
-const percent = (part: number, whole: number) => (whole === 0 ? "-" : `${Math.round((100 * part) / whole)}%`);
-const answerable = rows.filter((r) => r.answerable);
-const unanswerable = rows.filter((r) => !r.answerable);
-const latencies = rows.map((r) => r.latencyMs).sort((a, b) => a - b);
-const p50 = latencies[Math.floor(latencies.length * 0.5)] ?? 0;
-const p90 = latencies[Math.floor(latencies.length * 0.9)] ?? 0;
-const answerCost = rows.reduce((sum, r) => sum + (r.answerCostUsd ?? 0), 0);
-const judgeCost = rows.reduce((sum, r) => sum + (r.judgeCostUsd ?? 0), 0);
-
-const total = rows.length + crashed.length; // crashed questions are in the total, so they lower the score
-
-// Average time per question split by step, so we know what to speed up
-function timeSplit(): string {
-  if (rows.length === 0) return "-";
-  const avg = (pick: (t: EvalRow["timings"]) => number) => rows.reduce((sum, r) => sum + pick(r.timings), 0) / rows.length;
-  const s = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-  return `search ${s(avg((t) => t.searchMs))}, reranker ${s(avg((t) => t.rerankMs))}, Claude ${s(avg((t) => t.claudeMs))} in ${avg((t) => t.claudeTurns).toFixed(1)} turns`;
-}
-
-const summary = {
-  questions: total,
-  crashed,
-  correct: percent(rows.filter((r) => r.correct).length, total),
-  answerableCorrect: percent(answerable.filter((r) => r.correct).length, answerable.length),
-  retrievalHit: percent(answerable.filter((r) => r.retrievalHit).length, answerable.length),
-  citationHit: percent(answerable.filter((r) => r.citationHit).length, answerable.length),
-  abstentionAccuracy: percent(rows.filter((r) => r.abstainedCorrectly).length, total),
-  unanswerableAbstained: percent(unanswerable.filter((r) => r.abstained).length, unanswerable.length),
-  latencyP50Ms: p50,
-  latencyP90Ms: p90,
-  costPerQuestionUsd: rows.length ? answerCost / rows.length : 0,
-  judgeCostUsd: judgeCost,
-};
+// Totals: counts with their totals, because the sets are small
+const summary = summarize(rows, crashed);
+const sec = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+const { abstention: abst, latencyMs: lat, timeSplitMs: split, cost } = summary;
 
 console.log(`
-Correct answers          ${summary.correct} overall, ${summary.answerableCorrect} of answerable
-Search found right page  ${summary.retrievalHit}
-Cited right page         ${summary.citationHit}
-Abstention correct       ${summary.abstentionAccuracy} (unanswerable abstained: ${summary.unanswerableAbstained})
-Latency                  p50 ${(p50 / 1000).toFixed(1)}s, p90 ${(p90 / 1000).toFixed(1)}s
-Time per question (avg)  ${timeSplit()}
-Cost per question        $${summary.costPerQuestionUsd.toFixed(5)} (judge, eval only: $${judgeCost.toFixed(4)} total)`);
+Correct answers          ${fmt(summary.correct)} overall · answerable ${fmt(summary.answerableCorrect)} · partial ${summary.partial.count}
+Search found right page  ${fmt(summary.retrievalRecall)}   (retrieval recall)
+Cited right page         ${fmt(summary.citationExact)} exact · ${fmt(summary.citationNear)} within ±1 page
+Numbers in answers       ${fmt(summary.numbersExact)} of the reference values (exact check)
+Abstention               accuracy ${fmt(abst.accuracy)} · precision ${fmt(abst.precision)} · recall ${fmt(abst.recall)}
+                         hallucinated ${abst.hallucinated} · abstained wrongly ${abst.falseAbstain}
+Latency                  p50 ${sec(lat.p50)} · p95 ${sec(lat.p95)} · max ${sec(lat.max)}
+Time per question (avg)  search ${sec(split.search)}, reranker ${sec(split.rerank)}, Claude ${sec(split.claude)} in ${split.claudeTurns.toFixed(1)} turns
+Tokens per question      ${summary.tokens.input} in + ${summary.tokens.output} out
+Cost per question        $${cost.perQuestionUsd.toFixed(5)} (judge, eval only: $${cost.judgeUsd.toFixed(4)} total · whole run $${cost.totalUsd.toFixed(4)})`);
 
 if (crashed.length > 0) console.log(`Crashed (counted wrong)  ${crashed.join(", ")}`);
 
@@ -120,10 +103,10 @@ if (runs > 1) {
 // Save everything, so two runs (e.g. Haiku vs Sonnet) can be compared later
 const dir = join(config.storeDir, "eval");
 mkdirSync(dir, { recursive: true });
-const file = join(dir, `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+const report = join(dir, `results-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
 const settings = { answerModel: config.answerModel, answerEffort: config.answerEffort, answerSources: config.answerSources, judgeModel: config.judgeModel, runs };
-writeFileSync(file, JSON.stringify({ settings, summary, rows }, null, 2));
-console.log(`\nreport: ${file}`);
+writeFileSync(report, JSON.stringify({ questionsFile: file, settings, summary, rows }, null, 2));
+console.log(`\nreport: ${report}`);
 
 await pool.end();
 

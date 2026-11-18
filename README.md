@@ -11,8 +11,8 @@ error-code flowcharts and an A1 P&ID drawing).
 |---|---|
 | Dev questions (21) | **90 % correct** (19/21), right page cited 89–94 %, honest abstention |
 | Held-out questions (20, written and checked against the PDFs, never tuned on) | **20/20 correct**, all 3 "not covered" refused |
-| Latency per question (laptop CPU) | p50 **10 s**, p90 **16 s** |
-| Cost per question | **$0.0012** (Claude Haiku 5.5) |
+| Latency per question (laptop CPU) | p50 **11 s**, p95 **18 s** (max 21 s) |
+| Cost per question | **$0.0013** (Claude Haiku 5.5) |
 | One-time ingestion cost | **$0.26** for the whole pack (vision on 231 of 585 pages) |
 
 ---
@@ -72,7 +72,8 @@ question ─► hybrid search: pgvector (meaning) + full-text (codes, words), me
   a complete question for the search, and the last 3 turns go to Claude as context.
 - **Upload API** (`npm run api`): `POST /documents` takes a PDF or a ZIP of PDFs (only real PDFs, path tricks refused,
   size limits), `GET /documents` shows status and progress, `POST /ask` and `POST /ask/stream` answer (send `conversationId` for a follow-up),
-  `GET /conversations` and `GET/DELETE /conversations/<id>` list, open and delete saved chats.
+  `GET /conversations` and `GET/DELETE /conversations/<id>` list, open and delete saved chats,
+  `GET/POST /evals` and `GET /evals/<id>` run an eval and follow it.
 - **Worker** (`npm run worker`): takes queued documents one at a time and runs Docling → chunks → vision → embeddings.
   A document is `ready` only when every step worked. Duplicate files are skipped (same file hash), so adding one manual
   never re-processes the others. Several workers can run; work left by a crashed worker is picked up again.
@@ -81,10 +82,33 @@ question ─► hybrid search: pgvector (meaning) + full-text (codes, words), me
 
 ## Results
 
-### Evaluation (`npm run eval`)
-One command runs every question and reports: answer correctness (judged by Claude Sonnet 5.5 against the reference
-answer), whether search found the right page, whether the answer cited it, abstention accuracy, p50/p90 latency,
-time per step, and cost. `--runs 3` repeats every question and lists flaky questions; `--questions <file>` runs another set.
+### Evaluation (`npm run eval`, or the **Evaluation** page in the web app)
+One command runs every question through the real pipeline and reports, as counts ("19/21") because the sets are small:
+- **Answer correctness**: Claude Sonnet 5.5 grades each answer against the reference as correct / partial / wrong
+  (only "correct" counts), plus an **exact check** of the reference's numbers in the answer (decimal commas accepted).
+- **Retrieval recall**: did search find a right page at all? (tells a search failure from an answer failure)
+- **Citations**: right document + page cited, exactly and within ±1 page.
+- **Abstention**: accuracy, precision and recall, with the number of hallucinated answers and wrong abstentions.
+- **Latency** p50 / p95 / max with the time per step (search, reranker, Claude), **tokens** and **cost** per question
+  from the real token counts (answers and judge separately).
+
+Every run is saved to `store/eval/results-<timestamp>.json`. `--file <questions.json>` runs another set (for example
+the debrief's held-out set), `--runs 3` repeats each question and lists flaky ones, `--only dev-03,dev-17` reruns a few.
+The **Evaluation page** does the same in the browser: run a set from the server or drop a JSON file in the
+`dev-questions.json` format, watch the score fill in while it runs, open each question's answer and the judge's
+reason, and download the report.
+
+### Latest full run (dev set, 21 questions, 18 answerable + 3 not covered)
+
+| Metric | Result |
+|---|---|
+| Correct (judge: correct / partial / wrong) | **19/21** overall, 17/18 answerable, 0 partial |
+| Retrieval recall (search found a right page) | 17/18 |
+| Cited the right page | 17/18 exact, 17/18 within ±1 page |
+| Abstention | 19/21 right · precision 2/3 · recall 2/3 · 1 hallucinated (dev-05) · 1 wrong abstain (dev-19) |
+| Reference numbers in the answer (exact check) | 37/66: a strict, rough signal (references also list item and step numbers the answer may phrase differently); the judge decides correctness |
+| Latency | p50 11.3 s · p95 17.5 s · max 21.1 s (search 0.3 s, reranker 7.7 s, Claude 4.0 s in 1.4 turns) |
+| Tokens and cost per question | 9,830 in + 609 out · **$0.0013** (judge for the whole run $0.042) |
 
 ### How each step changed the score (dev set, 21 questions)
 
@@ -157,7 +181,7 @@ npm run ingest -- --tenant demo data/docs/*.pdf     # Docling → chunks (cached
 npm run vision -- --tenant demo data/docs/*.pdf     # Haiku vision on flagged pages (cached)
 npm run embed  -- --tenant demo                     # BGE-M3 vectors for new chunks
 npm run ask    -- --tenant demo "f12 op de buitenunit, wat moet ik checken"
-npm run eval   -- --tenant demo                     # dev questions; add --runs 3 or --questions data/holdout-questions.json
+npm run eval   -- --tenant demo                     # dev questions; add --runs 3 or --file their-questions.json
 ```
 
 ### Service and web app
@@ -189,11 +213,11 @@ src/ingest/      docling.ts (convert, cache, parts) · chunk.ts · needs-vision.
                  embed-chunks.ts · index.ts (ingestDocument) · pipeline.ts (full ingest for the worker)
 src/retrieval/   embed.ts (BGE-M3) · hybrid-search.ts · rerank.ts · vector-search.ts
 src/answer/      ask.ts (agent, prompt, structured output, citations, cost)
-src/eval/        evaluate.ts (scoring + judge)
+src/eval/        evaluate.ts (scoring + judge) · summary.ts (report, question-file check) · jobs.ts (evals from the web app)
 src/api/         server.ts · upload.ts          src/worker/index.ts
 src/auth/        passwords.ts (scrypt) · sessions.ts · accounts.ts (sign-up, log-in)
 src/chat/        conversations.ts (saved chats, follow-up context)
-web/             React + shadcn/ui web app (Vite): src/App.tsx · components/chat-view.tsx · documents-view.tsx · auth-page.tsx
+web/             React + shadcn/ui web app (Vite): src/App.tsx · components/chat-view.tsx · documents-view.tsx · eval-view.tsx · auth-page.tsx
 src/cli/         thin entry points for every command
 db/schema.sql    tenants, users, sessions, documents, chunks (vector + tsvector), conversations, messages
 docs/            lab notes with every decision and measurement
@@ -206,5 +230,13 @@ docs/            lab notes with every decision and measurement
    cost and abstention rate from the saved messages.
 4. **Bigger held-out set**, built from real (logged) questions, to keep measuring.
 5. **Production hardening**: login rate limit in Redis or the database (now in memory), password reset, roles, HTTPS.
-6. **Scale** (500 companies): pgvector HNSW with `hnsw.iterative_scan` for per-tenant filtering, more workers,
-   vision cost stays ~$0.001 per flagged page and is paid once per unique file (cache by file hash).
+6. **Uploads to object storage**: today the file travels in the upload request to the API, which checks it and writes it
+   to local disk, and the worker reads it there. In production the browser gets a short-lived **presigned URL** and
+   uploads straight to a private bucket (S3 / R2 / GCS, key `tenants/<id>/uploads/<id>.pdf`); the API only records it
+   and queues it, and any worker downloads it and runs the same checks (real PDF, size, hash for duplicates, safe ZIP
+   unpacking). The API then never holds file bytes in memory, and API and workers can run on separate machines.
+   Locally the same code can run against MinIO (S3-compatible, in Docker).
+7. **Scale (500 companies × 10,000 documents)**: one shared pgvector table with `tenant_id` on every row and HNSW with
+   `hnsw.iterative_scan` (or partitions per tenant for the biggest companies); an ingest queue with many workers;
+   vision paid once per unique file (cache by file hash, ~$0.001 per flagged page); the reranker on GPUs; evals run
+   per release and answer quality monitored from the saved messages.
