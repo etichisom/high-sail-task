@@ -207,7 +207,8 @@ hosted or GPU reranker can come back, decided by the eval.
   finds its table rows. For files uploaded through the web app the name came from the stored file (`<sha256>.pdf`),
   not from the uploaded name, so search for real uploads was weaker than the eval (run on CLI-loaded data) showed. A
   live eval run caught it (hard-05 wrong on an uploaded account). Fixed: the name now comes from the documents row;
-  existing chunks repaired; a fresh upload on the live site was checked.
+  existing chunks repaired; a fresh upload on the live site was checked. The live eval on that account afterwards:
+  dev 19/21, right page found and cited 18/18, p50 4.0 s.
 - **A fix that made the eval worse, so it was rolled back.** The EcoFlow cover photo shows unlabelled icons, and vision
   wrote guessed meanings for them. A stricter vision prompt (v3: "only meanings printed on the page") removed the
   guesses, but its re-read described two look-alike icons differently and broke another question. Measured over 2 runs
@@ -218,10 +219,12 @@ hosted or GPU reranker can come back, decided by the eval.
 - **dev-05 (glycol %)** is labelled "not covered", but the Midea manual says "never exceed 35 %" (PDF p41). The system
   answers that, naming the Midea manual. The label seems to assume a Panasonic installation; the question names no brand.
 - **dev-19 (valve between buffer tank and 3-way valve)** is ambiguous: the question names no installation, and the
-  P&ID has two 3-way valves next to the buffer tank (TV-201 and MV-401). Results vary per run: sometimes correct
-  (V-202, butterfly valve), sometimes it abstains, and once it named the valve next to the other 3-way valve. That
-  last case is a wrong answer, the kind we most want to avoid.
-- **dev-04 (H62 steps)** is flaky: correct in most runs, "partial" in others when it shortens the flow-switch test.
+  P&ID has two 3-way valves next to the buffer tank (TV-201 and MV-401). The reference means V-202 (butterfly valve,
+  between TV-201 and the buffer tank); in the latest runs the system finds and cites the right drawing but picks the
+  other path (V-401 before mixing valve MV-401). That is a wrong answer, the kind we most want to avoid; earlier
+  versions sometimes abstained here instead.
+- **dev-04 (H62 steps)** was flaky (sometimes "partial" when it shortened the flow-switch test); correct in all of
+  the latest runs.
 - **hard-14 (which brand of heat pump is on the roof?)**: the drawing names no brand. The system says so, but adds the
   capacity and refrigerant instead of a clean "not in the manuals", so it counts as not abstaining.
 - **Guessed icon meanings in the index**: vision v2 can describe an unlabelled icon (e.g. on a cover photo) with a
