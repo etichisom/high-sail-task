@@ -12,6 +12,7 @@ export type AskResult = {
   language: string;
   abstained: boolean; // true = the manuals don't contain the answer
   citations: Citation[];
+  retrieved: Citation[]; // every chunk search found (in order), so the eval can check the search on its own
   latencyMs: number; // whole question: search + Claude
   searchMs: number;
   inputTokens: number;
@@ -23,7 +24,14 @@ export type AskResult = {
 const PRICES: Record<string, { input: number; output: number }> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5 },
   "claude-sonnet-5-5": { input: 2, output: 10 },
+  "claude-opus-5-5": { input: 4, output: 20 },
 };
+
+// The eval uses this too, for the judge's cost. null = no price known for this model
+export function costUsd(model: string, inputTokens: number, outputTokens: number): number | null {
+  const price = PRICES[model];
+  return price ? (inputTokens * price.input + outputTokens * price.output) / 1_000_000 : null;
+}
 
 // The rules. The same text every time, so it never depends on the question.
 const SYSTEM_PROMPT = `You answer questions from field technicians about heat pumps and plant rooms.
@@ -91,16 +99,16 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
   }
 
   const { input_tokens, output_tokens } = response.usage;
-  const price = PRICES[config.answerModel];
   return {
     answer: output.answer,
     language: output.language,
     abstained: output.abstained,
     citations,
+    retrieved: hits.map((hit) => ({ filename: hit.filename, pageStart: hit.pageStart, pageEnd: hit.pageEnd })),
     latencyMs: Date.now() - started,
     searchMs,
     inputTokens: input_tokens,
     outputTokens: output_tokens,
-    costUsd: price ? (input_tokens * price.input + output_tokens * price.output) / 1_000_000 : null,
+    costUsd: costUsd(config.answerModel, input_tokens, output_tokens),
   };
 }

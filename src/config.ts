@@ -24,4 +24,6 @@ export const config = {
   answerModel: process.env.ANSWER_MODEL ?? "claude-haiku-5-5",
   answerEffort: process.env.ANSWER_EFFORT ?? "medium", // low | medium | high: how much Claude thinks first
   answerSources: Number(process.env.ANSWER_SOURCES ?? 8), // chunks from hybrid search sent to Claude
+    // Eval (Lab 12): a stronger model grades the answers against the reference answers
+  judgeModel: process.env.JUDGE_MODEL ?? "claude-sonnet-5-5",
 };

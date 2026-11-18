@@ -11,7 +11,8 @@
     "ingest": "tsx src/cli/ingest.ts",
     "embed": "tsx src/cli/embed.ts",
     "search": "tsx src/cli/search.ts",
-    "ask": "tsx src/cli/ask.ts"
+    "ask": "tsx src/cli/ask.ts",
+    "eval": "tsx src/cli/eval.ts"
   },
   "keywords": [],
   "author": "",
