@@ -45,11 +45,14 @@ export async function ingestDocument(tenantId: string, pdfPath: string): Promise
     try {
       await client.query("BEGIN");
       await client.query("DELETE FROM chunks WHERE document_id = $1", [documentId]);
+      // Every chunk starts with the manual's name ("midea-r290-mono-4-16kw-installation-en"), so a question
+      // that names the brand or model can match a table row that never mentions it (same as vision chunks)
+      const manual = basename(pdfPath, ".pdf");
       for (const chunk of chunks) {
         await client.query(
           `INSERT INTO chunks (tenant_id, document_id, page_start, page_end, chunk_type, section, source, content)
            VALUES ($1, $2, $3, $4, $5, $6, 'docling', $7)`,
-          [tenantId, documentId, chunk.pageStart, chunk.pageEnd, chunk.chunkType, chunk.section, chunk.content],
+          [tenantId, documentId, chunk.pageStart, chunk.pageEnd, chunk.chunkType, chunk.section, `${manual}\n\n${chunk.content}`],
         );
       }
       await client.query(

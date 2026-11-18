@@ -12,6 +12,7 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   doclingUrl: process.env.DOCLING_URL ?? "http://localhost:5001",
   storeDir: process.env.STORE_DIR ?? "store",
+  doclingPagesPerPart: Number(process.env.DOCLING_PAGES_PER_PART ?? 30), // big PDFs are converted in parts (memory)
   // BGE-M3 as ONNX, run in Node by Transformers.js (Lab 9)
   embeddingModel: process.env.EMBEDDING_MODEL ?? "Xenova/bge-m3",
   embeddingDtype: process.env.EMBEDDING_DTYPE ?? "q8", // q8 = 8-bit weights: 570 MB instead of 2.3 GB
@@ -24,6 +25,7 @@ export const config = {
   answerModel: process.env.ANSWER_MODEL ?? "claude-haiku-5-5",
   answerEffort: process.env.ANSWER_EFFORT ?? "medium", // low | medium | high: how much Claude thinks first
   answerSources: Number(process.env.ANSWER_SOURCES ?? 8), // chunks from hybrid search sent to Claude
+  answerMaxSearches: Number(process.env.ANSWER_MAX_SEARCHES ?? 2), // extra searches Claude may make (0 = no agent)
   // Reranker (Lab 13): reorders the hybrid search candidates before Claude sees the best few
   rerankModel: process.env.RERANK_MODEL ?? "onnx-community/bge-reranker-v2-m3-ONNX",
   rerankDtype: process.env.RERANK_DTYPE ?? "q8",

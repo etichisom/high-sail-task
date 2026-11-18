@@ -12,18 +12,23 @@ const cacheDir = join(config.storeDir, "vision");
 const client = new Anthropic();
 
 // Tested in Lab 8.6 on the P&ID (A1 drawing), EcoFlow icon pages and Mitsubishi p5
+// v2 (Lab 14): rows that make sense on their own (merged cells, tables without their own header), valve types
+const PROMPT_VERSION = 2;
 const PROMPT = `This is one page of a technical manual or drawing.
 Transcribe everything on it as markdown, in the page's own language.
 - Tables become markdown tables, with their column headers.
+- Every table row must make sense on its own: when a value spans several columns (merged cells), repeat it in each column; when a table continues lower on the page without its own header (e.g. its values sit under the columns of the table above), give it that table's column headers.
 - For every icon or pictogram, describe what it looks like in words (e.g. "suitcase with a clock", "yellow warning triangle") followed by the meaning the page gives it.
 - For diagrams and P&IDs: list every component with its tag and data (size, pressure, setpoint), then list every pipe connection as "tag → tag" in flow order, including valves on each line.
+- For every valve, give its type from its drawing symbol and the legend (e.g. "V-202: butterfly valve", "V-101: ball valve"), not a group like "ball/butterfly valve".
 - Keep codes and tags exactly as printed (e.g. V-202, EV-01, F12).
 Output only the transcription.`;
 
 export type PageText = { text: string; costUsd: number | null; cached: boolean };
 
 export async function readPage(pdfPath: string, fileHash: string, page: number): Promise<PageText> {
-  const cachePath = join(cacheDir, `${fileHash}-p${page}.md`);
+  // The prompt version is part of the file name: a better prompt re-reads the pages, old results are not reused
+  const cachePath = join(cacheDir, `${fileHash}-p${page}-v${PROMPT_VERSION}.md`);
   if (existsSync(cachePath)) return { text: readFileSync(cachePath, "utf8"), costUsd: 0, cached: true };
 
   const image = renderPage(pdfPath, page);

@@ -27,6 +27,7 @@ export type EvalRow = {
   judgeReason: string;
   answer: string;
   citations: Citation[];
+  searches: string[]; // extra searches the answer agent made
   latencyMs: number;
   answerCostUsd: number | null;
   judgeCostUsd: number | null;
@@ -88,6 +89,7 @@ export async function evaluateQuestion(tenantId: string, q: EvalQuestion): Promi
     abstainedCorrectly: result.abstained === !q.answerable,
     answer: result.answer,
     citations: result.citations,
+    searches: result.searches,
     latencyMs: result.latencyMs,
     answerCostUsd: result.costUsd,
   };
