@@ -18,6 +18,32 @@ error-code flowcharts and an A1 P&ID drawing).
 
 ---
 
+## Screenshots
+
+**Chat**: answer in the question's language, with the manual, page and section it comes from, and the exact source
+line ("From the manual"). A follow-up in Dutch is understood from the conversation.
+
+![Chat with citations and evidence](docs/images/chat.png)
+
+**Not in the manuals**: when the documents do not contain the fact, it says so instead of guessing.
+
+![Not in the manuals](docs/images/chat-not-covered.png)
+
+**Documents**: upload PDFs or a ZIP of PDFs; they are processed in the background.
+
+![Documents](docs/images/documents.png)
+
+**Evaluation** (live site, dev set): correctness graded by a separate judge, retrieval and citation checks,
+abstention, language, latency and cost; every question opens to show the answer and the judge's reason.
+
+![Evaluation: dev set](docs/images/eval-dev.png)
+
+![Evaluation: per question](docs/images/eval-dev-per-question.png)
+
+**Evaluation of the hard set** (written to break it: icons, scans, the P&ID, cross-language tables, traps):
+
+![Evaluation: hard set](docs/images/eval-hard.png)
+
 ## How it works
 
 ### Ingestion: once per document, in the background worker
