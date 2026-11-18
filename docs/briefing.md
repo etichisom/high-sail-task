@@ -19,20 +19,53 @@ About **$0.0013 per question**, **p50 ~11 s, p95 ~18 s** on a CPU, one-time inge
 
 ## 2. Architecture
 
-```
-INGEST (once per document, in a background worker)
-PDF ─► Docling (layout, tables, OCR) ─► own chunker (sections, table rows, figures) ──┐
-   └─► page routing: icons / drawings / broken tables ─► Claude Haiku vision ─►        ├─► BGE-M3 embeddings ─► Postgres + pgvector
-        (39 % of pages, cached by file hash)            page text, split small ────────┘   (+ full-text index), tenant_id on every row
+### Ingestion: once per document, in the background worker
 
-ASK (every question)
-question ─► (follow-up? rewrite it into a complete question first)
-         ─► hybrid search: pgvector (meaning) + full-text (exact codes), merged with RRF ─► top 40
-         ─► BGE Reranker v2 M3 (reads question + chunk together) ─► best 8
-         ─► Claude Haiku 5.5: structured answer {language, evidence, answer, sources, abstained}
-            + a search tool it may call 2 more times (better words, the manual's own language)
-         ─► citations = real document + page of the chunks it used (never written by the model)
-         ─► streamed to the browser while it is written
+```mermaid
+flowchart LR
+    U["Upload<br/>PDF or ZIP"] --> Q[("documents table<br/>status: queued")]
+    Q --> W["Worker<br/>SKIP LOCKED"]
+    W --> D["Docling<br/>layout · tables · OCR"]
+    D --> C["Chunker<br/>sections · table rows<br/>with headers · figures"]
+    W --> R{"Page routing<br/>icons? drawing?<br/>broken table?"}
+    R -- "39 % of pages" --> V["Claude Haiku vision<br/>page → text<br/>(cached by file hash)"]
+    R -- "other pages" --> X["text only"]
+    C --> E["BGE-M3 embeddings<br/>local, multilingual"]
+    V --> E
+    E --> P[("Postgres + pgvector<br/>vectors + full-text<br/>tenant_id on every row")]
+    P --> OK["status: ready"]
+```
+
+### Answering: every question
+
+```mermaid
+flowchart LR
+    Q["Question<br/>EN · NL · FR"] --> F{"Follow-up?"}
+    F -- yes --> RW["Rewrite into a<br/>complete question<br/>(last 3 turns)"]
+    F -- no --> S
+    RW --> S["Hybrid search<br/>pgvector = meaning<br/>full-text = exact codes<br/>merged with RRF"]
+    S -- "top 40" --> RR["BGE Reranker v2 M3<br/>reads question + chunk<br/>together"]
+    RR -- "best 8" --> H["Claude Haiku 5.5<br/>structured answer:<br/>language · evidence ·<br/>answer · sources · abstained"]
+    H -- "facts missing?<br/>max 2 extra searches" --> S
+    H --> A["Answer streamed<br/>in the question's language"]
+    H --> CI["Citations from the real chunks:<br/>document · page · section<br/>+ evidence quote"]
+    H --> N["Or: 'Not in the manuals'"]
+```
+
+### Where it runs
+
+```mermaid
+flowchart LR
+    B["Browser<br/>React + shadcn/ui"] -- HTTPS --> CF["Cloudflare<br/>DNS · TLS · proxy"]
+    CF --> CA["Caddy on the VPS<br/>Cloudflare IPs only"]
+    CA --> API["API + web app<br/>127.0.0.1:3100"]
+    API --> DB[("Postgres + pgvector")]
+    API -- "uploads queued" --> DB
+    WK["Worker"] -- "takes queued docs" --> DB
+    WK --> DL["Docling"]
+    API --> CL["Claude API<br/>answers · judge"]
+    WK --> CL2["Claude API<br/>vision"]
+    API -. "shared folder: uploads,<br/>caches, models" .- WK
 ```
 
 ---
@@ -222,7 +255,7 @@ label checks; it abstains when the fact is missing; citations come from the real
 Measured: abstention precision/recall in every eval.
 
 **Why is the score not 100 %?** Two of the misses are about the labels/ambiguity (dev-05, dev-19), one is flaky.
-I prefer to show that honestly; I did not tune the prompt to the dev set wording, and the held-out set scored 20/20.
+I prefer to show that honestly; I did not tune the prompt to the dev set wording, and the 20 extra test questions we wrote ourselves scored 20/20.
 
 **How do you know the judge is fair?** I read the failures by hand, compared Sonnet with Opus (same verdicts on all
 21), and added an exact number check and a "partial" grade so it is not too generous.
@@ -246,7 +279,7 @@ files are skipped, and Docling/vision results are cached by hash.
 **What is slow and how would you fix it?** The reranker on CPU (~8 s). GPU or hosted reranker → ~4 s total.
 
 **What would you do with another week?** Installation context (the technician picks the site/unit, which removes the
-ambiguity), evidence quote shown under each answer, 👍/👎 feedback, a bigger held-out set from real questions,
+ambiguity), evidence quote shown under each answer, 👍/👎 feedback, a bigger test set from real questions,
 bucket uploads, reranker on GPU.
 
 **How is the data of one company kept from another?** tenant_id on every row and every query, company taken from the
