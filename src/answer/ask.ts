@@ -9,6 +9,63 @@ import { rerank } from "../retrieval/rerank.js";
 
 export type Citation = { filename: string; pageStart: number; pageEnd: number };
 
+// Progress steps, sent while a question is being answered, so a web page can show what is happening.
+// They carry no answer data: the full result comes at the end, from ask() itself.
+export type AskEvent =
+  | { type: "searching" } // the first search of the manuals is starting
+  | { type: "searching_again"; query: string } // Claude asked for another search with these words
+  | { type: "thinking" } // Claude is reading the sources and writing the answer
+  | { type: "answer_delta"; text: string } // the next piece of the answer text, while Claude writes it
+  | { type: "answer_reset" }; // the text so far was not the answer (Claude searched instead): clear it
+
+// An earlier question and answer in the same conversation, so a follow-up ("and on the outdoor unit?") makes sense
+export type Turn = { question: string; answer: string };
+
+// Claude writes its answer as JSON: {"language": "...", "evidence": "...", "answer": "...", ...}.
+// This reads that JSON while it streams in and returns the new characters of the "answer" value,
+// so the page can show the answer while it is written. The full JSON is still checked at the end.
+export class AnswerTextReader {
+  private json = "";
+  private pos = -1; // where we are inside the answer string; -1 = not started yet
+  private done = false;
+
+  push(delta: string): string {
+    this.json += delta;
+    if (this.done) return "";
+    if (this.pos === -1) {
+      const key = /"answer"\s*:\s*"/.exec(this.json);
+      if (!key) return "";
+      this.pos = key.index + key[0].length;
+    }
+    let out = "";
+    while (this.pos < this.json.length) {
+      const ch = this.json[this.pos]!;
+      if (ch === '"') {
+        this.done = true;
+        break;
+      }
+      if (ch !== "\\") {
+        out += ch;
+        this.pos++;
+        continue;
+      }
+      // An escape: wait until all of it has arrived
+      const next = this.json[this.pos + 1];
+      if (next === undefined) break;
+      if (next === "u") {
+        const hex = this.json.slice(this.pos + 2, this.pos + 6);
+        if (hex.length < 4) break;
+        out += String.fromCharCode(parseInt(hex, 16));
+        this.pos += 6;
+        continue;
+      }
+      out += ({ n: "\n", t: "\t", r: "", b: "", f: "" } as Record<string, string>)[next] ?? next;
+      this.pos += 2;
+    }
+    return out;
+  }
+}
+
 export type AskResult = {
   answer: string;
   evidence: string; // the exact source lines the answer rests on (empty when abstained)
@@ -119,13 +176,61 @@ async function findSources(
     .join("\n\n");
 }
 
-export async function ask(tenantId: string, question: string): Promise<AskResult> {
+// Turns a follow-up into a question that can be searched on its own, in the follow-up's language.
+// "en op de buitenunit?" after a question about F12 becomes "wat betekent F12 op de buitenunit?".
+// One short Haiku call (~$0.0001); a question that is already complete comes back unchanged.
+async function standaloneQuestion(
+  question: string,
+  history: Turn[],
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const earlier = history.map((turn) => `Technician: ${turn.question}\nAnswer: ${turn.answer}`).join("\n\n");
+  const response = await client.messages.create({
+    model: config.answerModel,
+    max_tokens: 300,
+    output_config: { effort: "low" },
+    system:
+      "Rewrite the technician's last question so it can be understood without the conversation: fill in the equipment, " +
+      "code or part it refers to. Keep its language and its meaning. If it is already complete, return it unchanged. " +
+      "Reply with the question only.",
+    messages: [{ role: "user", content: `${earlier}\n\nLast question: ${question}` }],
+  });
+  const text = response.content
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("")
+    .trim();
+  return {
+    text: text === "" ? question : text.slice(0, 2000),
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
+}
+
+// onEvent is optional. The CLI and the eval leave it out, so they behave exactly as before.
+export async function ask(
+  tenantId: string,
+  question: string,
+  onEvent?: (event: AskEvent) => void,
+  history: Turn[] = [], // earlier turns of this conversation, oldest first (empty = a new question)
+): Promise<AskResult> {
   const started = Date.now();
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  // 0. A follow-up ("and what about the outdoor unit?") cannot be searched on its own words:
+  // Claude first rewrites it into a complete question, using the earlier turns.
+  onEvent?.({ type: "searching" });
+  let searchQuestion = question;
+  if (history.length > 0) {
+    const rewritten = await standaloneQuestion(question, history);
+    searchQuestion = rewritten.text;
+    inputTokens += rewritten.inputTokens;
+    outputTokens += rewritten.outputTokens;
+  }
 
   // 1. Retrieve + 2. Augment: the best chunks for the question, numbered so Claude can cite them
   const hits: Hit[] = [];
   const timings: AskResult["timings"] = { searchMs: 0, rerankMs: 0, claudeMs: 0, claudeTurns: 0 };
-  const sources = await findSources(tenantId, question, hits, timings);
+  const sources = await findSources(tenantId, searchQuestion, hits, timings);
   const searchMs = Date.now() - started;
 
   // 3. Generate, as a small agent: Claude answers, or first calls search_manuals with other words.
@@ -137,16 +242,27 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
     [tenantId],
   );
   const manuals = documents.rows.map((row) => `- ${row.filename}`).join("\n");
+  // Earlier turns are context only: the facts of the new answer must still come from the sources
+  const earlier =
+    history.length === 0
+      ? ""
+      : `Earlier in this conversation (context only, facts must come from the sources below):\n${history
+          .map((turn) => `Technician: ${turn.question}\nYou: ${turn.answer}`)
+          .join("\n\n")}\n\n`;
+  const asked = searchQuestion === question ? question : `${question}\n(Meaning: ${searchQuestion})`;
   const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: `Manuals of this company:\n${manuals}\n\n${sources}\n\nQuestion: ${question}` },
+    { role: "user", content: `Manuals of this company:\n${manuals}\n\n${earlier}${sources}\n\nQuestion: ${asked}` },
   ];
   const searches: string[] = [];
-  let inputTokens = 0;
-  let outputTokens = 0;
 
   for (let turn = 0; turn <= MAX_SEARCHES + 2; turn++) {
+    onEvent?.({ type: "thinking" });
     const claudeStarted = Date.now();
-    const response = await client.messages.parse({
+    // Streamed, so the answer text can be shown while Claude writes it. finalMessage() gives the same
+    // checked JSON (parsed_output) as messages.parse would.
+    const reader = new AnswerTextReader();
+    let streamedAny = false;
+    const stream = client.messages.stream({
       model: config.answerModel,
       max_tokens: 16000,
       output_config: { effort: config.answerEffort as "low" | "medium" | "high", format: ANSWER_FORMAT },
@@ -157,6 +273,17 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
       ...(searches.length >= MAX_SEARCHES ? { tool_choice: { type: "none" as const } } : {}),
       messages,
     });
+    if (onEvent) {
+      stream.on("text", (delta) => {
+        const text = reader.push(delta);
+        if (text !== "") {
+          streamedAny = true;
+          onEvent({ type: "answer_delta", text });
+        }
+      });
+    }
+    const response = await stream.finalMessage();
+    if (streamedAny && response.stop_reason === "tool_use") onEvent?.({ type: "answer_reset" });
     timings.claudeMs += Date.now() - claudeStarted;
     timings.claudeTurns++;
     inputTokens += response.usage.input_tokens;
@@ -175,6 +302,7 @@ export async function ask(tenantId: string, question: string): Promise<AskResult
           continue;
         }
         searches.push(query);
+        onEvent?.({ type: "searching_again", query });
         results.push({ type: "tool_result", tool_use_id: block.id, content: await findSources(tenantId, query, hits, timings, config.rerankCandidatesExtra) });
       }
       messages.push({ role: "user", content: results }); // all results of one turn in one message

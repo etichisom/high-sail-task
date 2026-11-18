@@ -40,6 +40,12 @@ export const config = {
   // Upload API (Lab 11 web part): plain node:http server
   apiPort: Number(process.env.API_PORT ?? 3000),
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB ?? 300), // biggest request body the API reads (a PDF or a ZIP)
+  // Login (Lab 11 web part)
+  sessionDays: Number(process.env.SESSION_DAYS ?? 7), // how long a login lasts before the user must log in again
+  cookieSecure: process.env.COOKIE_SECURE === "true", // adds Secure to the session cookie: browsers then send it only over HTTPS. Turn on when hosted.
+  // DEVELOPMENT ONLY: lets an X-Tenant header choose the company, for local curl tests. Keep this off when hosted,
+  // or anyone could pick any company by name.
+  allowTenantHeader: process.env.ALLOW_TENANT_HEADER === "true",
   // ZIP limits: a ZIP is opened by the server, so these stop a huge or hostile archive
   zipMaxPdfs: Number(process.env.ZIP_MAX_PDFS ?? 100), // PDFs taken from one ZIP
   zipMaxPdfMb: Number(process.env.ZIP_MAX_PDF_MB ?? 100), // size of one PDF inside a ZIP
