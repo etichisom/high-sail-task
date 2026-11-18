@@ -11,9 +11,9 @@ browser ──https──► Cloudflare ──https──► nginx / Caddy on th
 
 ## 1. What the server needs
 - Docker with the compose plugin (`docker compose version`).
-- **RAM: 12 GB or more free** (Docling up to 8 GB while reading a big PDF, the two models ~2–3 GB in the API and
+- **RAM: 12 GB or more free** (Docling up to 8 GB while reading a big PDF, the embedding model ~1.5 GB in the API and
   again in the worker). With less, set `mem_limit` lower and `DOCLING_PAGES_PER_PART=15` in `.env`.
-- ~10 GB disk (images, models 1.1 GB, uploads, database).
+- ~10 GB disk (images, embedding model 0.6 GB, uploads, database).
 
 Check: `free -h; nproc; df -h /; docker compose version; sudo ss -tlnp | grep -E ':80|:443|:3100'`
 
@@ -44,7 +44,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml logs -f api   # wait for "[api] listening"
 curl -s http://127.0.0.1:3100/health                    # {"ok":true}
 ```
-The first question after a start takes ~20 s longer: the models download once (1.1 GB, kept in the `store` volume).
+The first question after a start takes ~20 s longer: the embedding model downloads once (0.6 GB, kept in `store/`).
 
 ## 4. Reverse proxy
 

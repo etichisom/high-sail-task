@@ -26,12 +26,10 @@ export const config = {
   answerEffort: process.env.ANSWER_EFFORT ?? "low", // low | medium | high: how much Claude thinks first (low: same eval score as medium, ~1 s faster)
   answerSources: Number(process.env.ANSWER_SOURCES ?? 8), // chunks from hybrid search sent to Claude
   answerMaxSearches: Number(process.env.ANSWER_MAX_SEARCHES ?? 2), // extra searches Claude may make (0 = no agent)
-  // Reranker (Lab 13): reorders the hybrid search candidates before Claude sees the best few
-  rerankModel: process.env.RERANK_MODEL ?? "onnx-community/bge-reranker-v2-m3-ONNX",
-  rerankDtype: process.env.RERANK_DTYPE ?? "q8",
-  rerankCandidates: Number(process.env.RERANK_CANDIDATES ?? 40), // hybrid search hits the reranker reads
-  rerankCandidatesExtra: Number(process.env.RERANK_CANDIDATES_EXTRA ?? 20), // for the agent's extra searches (aimed, so fewer needed)
-  rerankMaxTokens: Number(process.env.RERANK_MAX_TOKENS ?? 512), // question + chunk length the reranker reads; shorter = faster
+  // Merged hybrid-search results looked at per search; chunks Claude already has are skipped, the best new ones are sent.
+  // (A BGE reranker used to reorder these 40; measured later, the agent made it unnecessary: same score, 3x faster.)
+  hybridCandidates: Number(process.env.HYBRID_CANDIDATES ?? 40),
+  hybridCandidatesExtra: Number(process.env.HYBRID_CANDIDATES_EXTRA ?? 20), // for the agent's extra searches
   // Vision (Lab 8.6): Claude reads pages with icons, diagrams and broken tables, once, at ingest
   visionModel: process.env.VISION_MODEL ?? "claude-haiku-5-5",
   visionConcurrency: Number(process.env.VISION_CONCURRENCY ?? 4), // pages sent to Claude at the same time

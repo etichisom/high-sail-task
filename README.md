@@ -11,8 +11,9 @@ error-code flowcharts and an A1 P&ID drawing).
 |---|---|
 | Dev questions (21) | **90 % correct** (19/21), right page cited 89–94 %, honest abstention |
 | Self-made test questions (20, written by us and checked against the PDFs, not used for tuning) | **20/20 correct**, all 3 "not covered" refused |
-| Latency per question (laptop CPU) | p50 **11 s**, p95 **17 s** |
-| Cost per question | **$0.0014** (Claude Haiku 5.5) |
+| Hard set (16, written to break it: icons, scans, P&ID, cross-language tables, traps), 2 runs | **30/32**, right page found and cited 24/24 |
+| Latency per question (laptop CPU) | p50 **4.5 s**, p95 **8 s** |
+| Cost per question | **$0.0016** (Claude Haiku 5.5) |
 | One-time ingestion cost | **$0.26** for the whole pack (vision on 231 of 585 pages) |
 
 ---
@@ -44,8 +45,7 @@ flowchart LR
     F -- yes --> RW["Rewrite into a<br/>complete question<br/>(last 3 turns)"]
     F -- no --> S
     RW --> S["Hybrid search<br/>pgvector = meaning<br/>full-text = exact codes<br/>merged with RRF"]
-    S -- "top 40" --> RR["BGE Reranker v2 M3<br/>reads question + chunk<br/>together"]
-    RR -- "best 8" --> H["Claude Haiku 5.5<br/>structured answer:<br/>language · evidence ·<br/>answer · sources · abstained"]
+    S -- "best 8 new chunks" --> H["Claude Haiku 5.5<br/>structured answer:<br/>language · evidence ·<br/>answer · sources · abstained"]
     H -- "facts missing?<br/>max 2 extra searches" --> S
     H --> A["Answer streamed<br/>in the question's language"]
     H --> CI["Citations from the real chunks:<br/>document · page · section<br/>+ evidence quote"]
@@ -85,7 +85,9 @@ flowchart LR
 - **Hybrid search**: pgvector cosine distance for meaning ("vakantie schema" finds "Holiday schedule") plus Postgres
   full-text (`'simple'` config, any important word, stopwords removed) for exact codes like F12, H62, V-202.
   The two lists are merged with Reciprocal Rank Fusion.
-- **BGE Reranker v2 M3** (local, 8-bit ONNX) reads question + chunk together and keeps the best 8 of 40.
+- **The best 8 new chunks** of the merged list go to Claude (chunks it already saw are skipped). A BGE reranker used to
+  reorder the 40 candidates first; once the agent was in place it no longer improved the score and tripled the
+  latency, so it was removed (see "How each step changed the score").
 - **Claude Haiku 5.5** answers with structured output. Rules in the prompt: only use the sources, answer in the question's
   language, copy the evidence line before answering, check that a value's label means what was asked (a set point is not
   a minimum), answer every part of the question, match field words to manual words (breaker = MFA, wire gauge = AWG),
@@ -125,7 +127,7 @@ One command runs every question through the real pipeline and reports, as counts
 - **Citations**: right document + page cited, exactly and within ±1 page.
 - **Abstention**: accuracy, precision and recall, with the number of hallucinated answers and wrong abstentions.
 - **Language**: is the answer in the question's language? Detected from the answer text itself, not from Claude's label.
-- **Latency** p50 / p95 / max with the time per step (search, reranker, Claude), **tokens** and **cost** per question
+- **Latency** p50 / p95 / max with the time per step (search, Claude), **tokens** and **cost** per question
   from the real token counts (answers and judge separately).
 
 Every run is saved to `store/eval/results-<timestamp>.json`. `--file <questions.json>` runs another set (for example
@@ -138,14 +140,14 @@ reason, and download the report.
 
 | Metric | Result |
 |---|---|
-| Correct (judge: correct / partial / wrong) | **19/21** overall, 17/18 answerable, 0 partial |
-| Retrieval recall (search found a right page) | **18/18** |
+| Correct (judge: correct / partial / wrong) | **19/21** overall, 17/18 answerable, 1 partial (dev-04) |
+| Retrieval recall (search found a right page) | **17/18** |
 | Cited the right page | 17/18 exact, 17/18 within ±1 page (+ section name and evidence quote) |
 | Answered in the question's language | **21/21** (detected from the answer text) |
-| Abstention | 19/21 right · precision 2/3 · recall 2/3 · 1 hallucinated (dev-05) · 1 wrong abstain (dev-19) |
-| Reference numbers in the answer (exact check) | 37/66: a strict, rough signal (references also list item and step numbers the answer may phrase differently); the judge decides correctness |
-| Latency | p50 10.9 s · p95 16.6 s · max 29.5 s (search 0.2 s, reranker 7.4 s, Claude 4.8 s in 1.4 turns) |
-| Tokens and cost per question | 10,257 in + 648 out · **$0.0014** (judge for the whole run $0.042) |
+| Abstention | 20/21 right · precision 2/2 · recall 2/3 · 1 hallucinated (dev-05) · 0 wrong abstains |
+| Reference numbers in the answer (exact check) | 36/66: a strict, rough signal (references also list item and step numbers the answer may phrase differently); the judge decides correctness |
+| Latency | p50 **4.5 s** · p95 **7.9 s** · max 8.0 s (search 0.2 s, Claude 4.6 s in 1.5 turns) |
+| Tokens and cost per question | 12,680 in + 681 out · **$0.0016** (judge for the whole run $0.044) |
 
 ### How each step changed the score (dev set, 21 questions)
 
@@ -158,12 +160,13 @@ reason, and download the report.
 | + search-tool agent, keyword fix, prompt rules | 76 % | Cross-language questions find the right manual |
 | + evidence quote, field-word matching | 81 % | Fewer wrong values and wrong abstentions |
 | + vision v2 (self-contained table rows, valve types), small vision chunks, manual names, label/part rules | **86–90 %** | Search found the right page in 94–100 % of answerable questions |
+| Reranker on vs off (with the agent in place) | **19/21 both** · hard set 29/32 with, **30/32 without** · p50 **11 s → 4.5 s** | The agent's extra searches now do the reranker's job; the reranker was removed |
 
 ### Stretch goals
 
 | Goal | What is built |
 |---|---|
-| Comparison of approaches, with eval numbers | The step table above (baseline 38 % → vision 48 % → reranker 57 % → … → 86–90 %) and the model comparison below (Haiku 90 % vs Sonnet 57 % / 52 % at 12× the cost). Each row is a measured eval run. |
+| Comparison of approaches, with eval numbers | The step table above (baseline 38 % → vision 48 % → reranker 57 % → … → 86–90 %, then reranker on vs off: same score, 2.5× faster, so removed) and the model comparison below (Haiku 90 % vs Sonnet 57 % / 52 % at 12× the cost). Each row is a measured eval run. |
 | Citations more precise than a page | Each citation carries the **section, table or figure** it came from (e.g. "16.5.31 Outdoor Defrost Temperature Sensor Abnormality (F43)", "Home screen icons"), and each answer shows the **evidence quote**: the exact source line or table row, copied word for word. |
 | Follow-up questions | Saved conversations; a follow-up is rewritten into a complete question for the search, with the last 3 turns as context ("and where is the pressure switch?" after an F12 question). |
 | Add a document without re-processing everything | Files are identified by their sha256: an uploaded duplicate is skipped, and Docling and vision results are cached per file hash, so only the new manual is processed. |
@@ -186,13 +189,15 @@ model did not. Haiku stays the answer model. The judge is Sonnet 5.5: it gave th
 |---|---|
 | Ingestion (one time): Docling + embeddings | $0 (local) |
 | Ingestion (one time): Haiku vision, 231 pages | $0.26 (~$0.001 per page) |
-| Per question (search + reranker local, Haiku 1–3 calls) | $0.0012 |
-| Amortised over 1,000 questions | ~$0.0015 per question |
+| Per question (search local, Haiku 1–3 calls, follow-up rewrite) | $0.0016 |
+| Amortised over 1,000 questions | ~$0.0019 per question |
 
-### Latency (laptop CPU, models loaded once)
-Average per question: search 0.1 s, **reranker 6.3 s**, Claude 4.2 s (1.3 turns). The reranker runs on CPU: on a GPU it
-drops to well under a second. Tested and rejected: shorter reranker input (faster but changes the ranking), batching
-(slower on CPU), 30 first candidates (breaks a P&ID question whose page ranks around #35).
+### Latency (laptop CPU, model loaded once)
+Average per question: search 0.2 s, Claude 4.6 s (1.5 turns): **p50 4.5 s, p95 7.9 s**, and the answer streams from
+the first words. Until the last step a local BGE reranker (cross-encoder) reordered the 40 candidates: it took 7–8 s
+on a laptop CPU and 11–31 s on the 4-vCPU server. Measured with the agent in place, removing it kept the score
+(dev 19/21 both, hard set 30/32 vs 29/32), so it was removed. If a much larger document set makes search noisier, a
+hosted or GPU reranker can come back, decided by the eval.
 
 ### Known limits (honest)
 - **dev-05 (glycol %)** is labelled "not covered", but the Midea manual says "never exceed 35 %" (PDF p41). The system
@@ -257,7 +262,7 @@ Settings (models, candidates, effort, limits) are in `src/config.ts` and can be 
 ```
 src/ingest/      docling.ts (convert, cache, parts) · chunk.ts · needs-vision.ts (routing) · vision.ts · vision-chunks.ts
                  embed-chunks.ts · index.ts (ingestDocument) · pipeline.ts (full ingest for the worker)
-src/retrieval/   embed.ts (BGE-M3) · hybrid-search.ts · rerank.ts · vector-search.ts
+src/retrieval/   embed.ts (BGE-M3) · hybrid-search.ts · vector-search.ts
 src/answer/      ask.ts (agent, prompt, structured output, citations, cost)
 src/eval/        evaluate.ts (scoring + judge) · summary.ts (report, question-file check) · jobs.ts (evals from the web app)
 src/api/         server.ts · upload.ts          src/worker/index.ts
@@ -271,7 +276,8 @@ docs/            lab notes with every decision and measurement
 
 ## Next steps
 1. **Installation context**: let the technician pick the unit/site, so ambiguous questions (dev-05, dev-19) resolve.
-2. **Reranker on a GPU** (or a hosted reranker): latency from ~10 s to ~4 s.
+2. **Re-test a reranker at scale**: with thousands of documents per company search gets noisier; a hosted or GPU
+   reranker (fast, unlike the CPU one removed here) comes back only if the eval shows it pays off.
 3. **Feedback and monitoring**: 👍/👎 on answers (the `messages.feedback` column exists), and a dashboard of latency,
    cost and abstention rate from the saved messages.
 4. **Bigger test set**, built from real (logged) questions, to keep measuring.
@@ -282,7 +288,14 @@ docs/            lab notes with every decision and measurement
    and queues it, and any worker downloads it and runs the same checks (real PDF, size, hash for duplicates, safe ZIP
    unpacking). The API then never holds file bytes in memory, and API and workers can run on separate machines.
    Locally the same code can run against MinIO (S3-compatible, in Docker).
-7. **Scale (500 companies × 10,000 documents)**: one shared pgvector table with `tenant_id` on every row and HNSW with
-   `hnsw.iterative_scan` (or partitions per tenant for the biggest companies); an ingest queue with many workers;
-   vision paid once per unique file (cache by file hash, ~$0.001 per flagged page); the reranker on GPUs; evals run
-   per release and answer quality monitored from the saved messages.
+7. **Scale (500 companies × 10,000 documents = 5 M documents)**. Measured here: ~375 chunks per manual and ~16 KB
+   per chunk, so copying everything per company would mean ~1.9 billion chunks (~29 TB) and ~$127k of vision. Changes:
+   - **Process each unique file once and share it** (files are already keyed by sha256; a `company_documents` link
+     table decides who sees what; private drawings stay private). Most companies use the same manufacturer manuals.
+   - **Search a small set**: filter by the technician's installation first, then vector + full-text inside it.
+   - **Partition the chunks** (per file group / per company) with an HNSW + GIN index per partition, `halfvec`
+     (16-bit) vectors, pgvector iterative scan or pgvectorscale (DiskANN); a dedicated vector database per
+     namespace if Postgres is outgrown (all search already goes through `hybrid-search.ts`).
+   - **Ingest per page on GPU workers** (Docling and embeddings as GPU services), a managed queue with
+     priorities and retries, presigned uploads to object storage, vision through the Batch API.
+   - **Caches, per-company rate limits and budgets, eval in CI and monitoring** of abstention, latency and cost.

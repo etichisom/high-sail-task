@@ -54,7 +54,7 @@ export function loadBuiltInSet(id: string): EvalQuestion[] | null {
 }
 
 const jobs = new Map<string, EvalJob>();
-const queue: EvalJob[] = []; // one eval at a time for the whole server: the reranker uses all the CPU
+const queue: EvalJob[] = []; // one eval at a time for the whole server: it uses the CPU (embeddings) and the API budget
 let running = false;
 
 export function startEval(tenantId: string, name: string, questions: EvalQuestion[]): EvalJob {

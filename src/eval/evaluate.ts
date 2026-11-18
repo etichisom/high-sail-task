@@ -33,7 +33,7 @@ export type EvalRow = {
   answer: string;
   citations: Citation[];
   searches: string[]; // extra searches the answer agent made
-  timings: AskResult["timings"]; // where the time went (search, reranker, Claude)
+  timings: AskResult["timings"]; // where the time went (search, Claude)
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;

@@ -86,7 +86,7 @@ Numbers in answers       ${fmt(summary.numbersExact)} of the reference values (e
 Abstention               accuracy ${fmt(abst.accuracy)} · precision ${fmt(abst.precision)} · recall ${fmt(abst.recall)}
                          hallucinated ${abst.hallucinated} · abstained wrongly ${abst.falseAbstain}
 Latency                  p50 ${sec(lat.p50)} · p95 ${sec(lat.p95)} · max ${sec(lat.max)}
-Time per question (avg)  search ${sec(split.search)}, reranker ${sec(split.rerank)}, Claude ${sec(split.claude)} in ${split.claudeTurns.toFixed(1)} turns
+Time per question (avg)  search ${sec(split.search)}, Claude ${sec(split.claude)} in ${split.claudeTurns.toFixed(1)} turns
 Tokens per question      ${summary.tokens.input} in + ${summary.tokens.output} out
 Cost per question        $${cost.perQuestionUsd.toFixed(5)} (judge, eval only: $${cost.judgeUsd.toFixed(4)} total · whole run $${cost.totalUsd.toFixed(4)})`);
 

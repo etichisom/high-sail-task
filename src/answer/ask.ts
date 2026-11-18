@@ -5,7 +5,6 @@ import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import { config } from "../config.js";
 import { pool } from "../db.js";
 import { hybridSearch } from "../retrieval/hybrid-search.js";
-import { rerank } from "../retrieval/rerank.js";
 
 // section: the heading, table or figure the chunk came from (more precise than the page alone)
 export type Citation = { filename: string; pageStart: number; pageEnd: number; section?: string };
@@ -78,7 +77,7 @@ export type AskResult = {
   latencyMs: number; // whole question: search + Claude
   searchMs: number;
   // Where the time went, summed over all searches and turns (to find what makes an answer slow)
-  timings: { searchMs: number; rerankMs: number; claudeMs: number; claudeTurns: number };
+  timings: { searchMs: number; claudeMs: number; claudeTurns: number };
   inputTokens: number;
   outputTokens: number;
   costUsd: number | null; // null = no price known for this model
@@ -152,22 +151,20 @@ const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment 
 
 type Hit = Awaited<ReturnType<typeof hybridSearch>>[number];
 
-// Hybrid search (~40 candidates) → reranker → the best few, as numbered sources.
+// Hybrid search (~40 merged candidates) → the best new ones, as numbered sources.
 // `known` holds every chunk already shown to Claude, so a new search only adds new chunks.
 async function findSources(
   tenantId: string,
   query: string,
   known: Hit[],
   timings: AskResult["timings"],
-  candidateCount = config.rerankCandidates,
+  candidateCount = config.hybridCandidates,
 ): Promise<string> {
-  let t = Date.now();
+  const t = Date.now();
   const candidates = await hybridSearch(tenantId, query, candidateCount);
   timings.searchMs += Date.now() - t;
-  const fresh = candidates.filter((hit) => !known.some((k) => k.id === hit.id));
-  t = Date.now();
-  const best = await rerank(query, fresh, config.answerSources);
-  timings.rerankMs += Date.now() - t;
+  // Chunks Claude already saw are skipped, so an extra search always brings new text
+  const best = candidates.filter((hit) => !known.some((k) => k.id === hit.id)).slice(0, config.answerSources);
   const first = known.length;
   known.push(...best);
   if (best.length === 0) return "No new sources found.";
@@ -232,7 +229,7 @@ export async function ask(
 
   // 1. Retrieve + 2. Augment: the best chunks for the question, numbered so Claude can cite them
   const hits: Hit[] = [];
-  const timings: AskResult["timings"] = { searchMs: 0, rerankMs: 0, claudeMs: 0, claudeTurns: 0 };
+  const timings: AskResult["timings"] = { searchMs: 0, claudeMs: 0, claudeTurns: 0 };
   const sources = await findSources(tenantId, searchQuestion, hits, timings);
   const searchMs = Date.now() - started;
 
@@ -306,7 +303,7 @@ export async function ask(
         }
         searches.push(query);
         onEvent?.({ type: "searching_again", query });
-        results.push({ type: "tool_result", tool_use_id: block.id, content: await findSources(tenantId, query, hits, timings, config.rerankCandidatesExtra) });
+        results.push({ type: "tool_result", tool_use_id: block.id, content: await findSources(tenantId, query, hits, timings, config.hybridCandidatesExtra) });
       }
       messages.push({ role: "user", content: results }); // all results of one turn in one message
       continue;

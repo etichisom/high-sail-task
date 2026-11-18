@@ -13,7 +13,8 @@ refuse when the evidence is missing.
 
 Results on the 21 dev questions: **18–19/21 correct** (it varies a little per run), the right page found in 94–100 %,
 the right page cited in ~94 %. On 20 extra questions I wrote and checked myself and never tuned on: 20/20.
-About **$0.0013 per question**, **p50 ~11 s, p95 ~18 s** on a CPU, one-time ingest cost **$0.26** for the whole pack.
+A hard set written to break it (icons, scans, the P&ID, cross-language tables, traps): **30/32** over 2 runs.
+About **$0.0016 per question**, **p50 ~4.5 s, p95 ~8 s**, one-time ingest cost **$0.26** for the whole pack.
 
 ---
 
@@ -44,8 +45,7 @@ flowchart LR
     F -- yes --> RW["Rewrite into a<br/>complete question<br/>(last 3 turns)"]
     F -- no --> S
     RW --> S["Hybrid search<br/>pgvector = meaning<br/>full-text = exact codes<br/>merged with RRF"]
-    S -- "top 40" --> RR["BGE Reranker v2 M3<br/>reads question + chunk<br/>together"]
-    RR -- "best 8" --> H["Claude Haiku 5.5<br/>structured answer:<br/>language · evidence ·<br/>answer · sources · abstained"]
+    S -- "best 8 new chunks" --> H["Claude Haiku 5.5<br/>structured answer:<br/>language · evidence ·<br/>answer · sources · abstained"]
     H -- "facts missing?<br/>max 2 extra searches" --> S
     H --> A["Answer streamed<br/>in the question's language"]
     H --> CI["Citations from the real chunks:<br/>document · page · section<br/>+ evidence quote"]
@@ -81,7 +81,7 @@ flowchart LR
 | **BGE-M3 embeddings**, local (Transformers.js, 8-bit) | Multilingual: a Dutch question finds an English or French page. Runs on CPU, free, no data leaves the server. | Paid embedding APIs: cost per call and another dependency. |
 | **Postgres + pgvector** | Vectors, full-text search, the tenants, users, documents and chats in **one database**. `tenant_id` on every row. | A separate vector DB would add a service for 3,400 chunks. |
 | **Hybrid search + RRF** | Vectors find meaning ("vakantie" = "holiday"); full-text finds exact codes (F12, H62, V-202) that embeddings blur. RRF merges both rank lists without tuning weights. | Vector only: missed exact error codes. |
-| **Reranker** (BGE Reranker v2 M3, local) | A cross-encoder reads question + chunk together: much more precise. Moved the right page from #12–#35 to the top. **+9 points.** | Shorter reranker input and batching: faster but changed the ranking or was slower on CPU. |
+| **No reranker (removed after measuring)** | A BGE cross-encoder reranker gave **+9 points** when the system had a single search. After the agent was added I measured again: **same score without it** (dev 19/21 both, hard set 30/32 vs 29/32) and **p50 11 s → 4.5 s**. So it was removed: the agent's extra searches do its job. | Making it lighter (fewer candidates, shorter text): still slow and lost accuracy. A hosted/GPU reranker: re-test at scale. |
 | **Claude Haiku 5.5 to answer** | Measured, not assumed: Haiku with the agent 90 %; Sonnet without agent 57 % at 12× the cost; Sonnet with agent 52 % (kept searching). Failures came from what the model *sees*, not how smart it is. | Sonnet, Opus. |
 | **Structured output** | Claude must return JSON: language, evidence, answer, source numbers, abstained. No parsing of free text; citations come from the source numbers. | Free text + regex: fragile. |
 | **Small agent (search tool, max 2 extra searches)** | When the first results miss, Claude searches again with better words in the manual's language (Dutch question → French De Dietrich manual). | No agent: cross-language questions failed. |
@@ -99,7 +99,7 @@ src/ingest/      docling.ts      PDF → Docling JSON (cached by file hash, big 
                  vision-chunks.ts vision markdown → small chunks under their headings
                  embed-chunks.ts BGE-M3 vectors for chunks that have none yet
                  pipeline.ts     the full ingest for one PDF; "ready" only if every step worked
-src/retrieval/   embed.ts · hybrid-search.ts (vector + full-text + RRF) · rerank.ts
+src/retrieval/   embed.ts · hybrid-search.ts (vector + full-text + RRF)
 src/answer/      ask.ts          the agent: prompt rules, search tool, structured output, citations, cost,
                                  follow-up rewriting, answer streaming
 src/eval/        evaluate.ts     one question: ask + checks + judge
@@ -164,14 +164,14 @@ For every question it runs the **real pipeline**, then measures:
 | **Exact number check** | Which numbers of the reference appear in the answer (decimal comma = dot). A rough second signal. |
 | **Abstention** | Accuracy, precision, recall; how many hallucinated (answered an unanswerable) and wrongly abstained. |
 | **Language** | Is the answer text in the question's language? Detected from the answer words (en/nl/fr), not Claude's own label. |
-| **Latency** | p50 / p95 / max, plus time per step: search, reranker, Claude. |
+| **Latency** | p50 / p95 / max, plus time per step: search, Claude. |
 | **Tokens + cost** | Real token counts × the price list, per question; judge cost shown separately. |
 
 Every run is saved as `store/eval/results-<time>.json`. Counts are shown as "18/21", not just %, because the set is
 small: one question is ~5 points. `--runs 3` shows flaky questions.
 
 **How the score grew** (dev set): 38 % baseline → 48 % vision → 57 % reranker → 62 % all 9 manuals →
-76 % agent + keyword fix → 81 % evidence + term matching → 86–90 % vision v2, small chunks, manual names, label rules.
+76 % agent + keyword fix → 81 % evidence + term matching → 86–90 % vision v2, small chunks, manual names, label rules → **reranker removed: same 90 %, 2.5× faster**.
 
 **The known misses (honest)**
 - **dev-05 (max glycol %)** is labelled "not covered", but the Midea manual says "never exceed 35 %" (PDF p41). The
@@ -187,9 +187,9 @@ small: one question is ~5 points. `--runs 3` shows flaky questions.
 
 | | Cost |
 |---|---|
-| Docling, embeddings, reranker | $0 (run locally) |
+| Docling, embeddings | $0 (run locally) |
 | Vision at ingest, 231 pages, once | $0.26 (~$0.001/page), cached by file hash |
-| Per question (Haiku, 1–3 calls, ~9–11k input tokens) | ~$0.0013 |
+| Per question (Haiku, 1–3 calls, ~11–13k input tokens) | ~$0.0016 |
 | Follow-up rewrite | +~$0.0001 |
 | Eval judge (Sonnet), whole dev set | ~$0.04 per run |
 | Whole dev eval run | ~$0.07 |
@@ -200,10 +200,13 @@ Cost is computed from the **real token counts** in every response × the price l
 
 ## 9. Latency
 
-Average per question: search 0.3 s, **reranker ~8 s**, Claude ~4 s in 1.3 turns. The reranker runs on CPU and is
-the bottleneck; on a GPU it is well under 1 s (→ ~4–5 s per answer). The answer **streams**, so the technician
-sees text after the search, not after the whole answer. Changes tried: 20 instead of 40 candidates on extra
-searches, effort "low" (same score, ~1 s faster): p50 12.4 s → ~10–11 s.
+Now: search 0.2 s, Claude ~4.6 s in 1.5 turns → **p50 4.5 s, p95 7.9 s** (dev set), and the answer **streams**,
+so the technician reads the first words after ~2 s. That is in the normal range for a production assistant
+(first words in 1–2 s, full answer in 3–8 s).
+
+How it got here: p50 12.4 s → 10–11 s (effort "low", fewer candidates on extra searches) → **4.5 s by removing the
+CPU reranker** (it took 7–8 s on the laptop and 11–31 s on the 4-vCPU server). I removed it only after the eval
+showed the same score without it.
 
 ---
 
@@ -235,13 +238,107 @@ searches, effort "low" (same score, ~1 s faster): p50 12.4 s → ~10–11 s.
 
 ## 12. Scaling to 500 companies × 10,000 documents
 
-- **Database**: one pgvector table with `tenant_id` + HNSW index (with iterative scan for filtered search), or
-  partitions per tenant for the biggest ones. ~5 M chunks fits Postgres well.
-- **Ingest**: the queue already supports many workers (SKIP LOCKED); run more of them, Docling on bigger machines.
-- **Uploads**: presigned URLs straight to a bucket (S3/R2), the API never holds the file.
-- **Cost**: vision once per unique file (hash cache, ~$0.001/flagged page); answers ~$0.0013.
-- **Speed**: reranker on GPU (or a hosted reranker); cache answers to repeated questions.
-- **Quality**: eval set per release; monitor abstention rate, latency, cost and 👍/👎 from the saved messages.
+### The size of the problem (estimated from what I measured here)
+
+| Measured on this pack | Value |
+|---|---|
+| Chunks per document (these are big manuals, ~65 pages) | ~375 |
+| Storage per chunk (text + 1024-dim vector + full-text + indexes) | ~16 KB |
+| Pages that need vision | 39 % |
+
+| At 500 × 10,000 = **5 million documents** | Naive (copy everything per company) |
+|---|---|
+| Chunks | ~1.9 billion |
+| Database size | ~29 TB |
+| Vision cost (39 % of ~325 M pages × $0.001) | ~$127,000 |
+| Docling time on one CPU | years |
+
+So the current design (one table, everything per company, CPU models in the API) does **not** scale as is.
+What I would change, in order of impact:
+
+### 1. Store each unique document once (biggest win)
+Companies install the same brands: most of their 10,000 documents are the same manufacturer manuals. Today a file is
+already identified by its **sha256**; at scale, the chunks and vectors belong to the **file**, not the company:
+
+```mermaid
+flowchart LR
+    T1["Company A"] --> L["company_documents<br/>(which company may see which file)"]
+    T2["Company B"] --> L
+    L --> F["files (sha256)<br/>processed ONCE"]
+    F --> C["chunks + vectors<br/>stored ONCE"]
+    P["Company's own private docs<br/>(drawings, P&IDs)"] --> C
+```
+
+If, say, 10 % of the 5 M documents are unique, that is ~190 M chunks instead of 1.9 billion, and Docling + vision
+run 10× less (vision ~$13k once, not $127k). A company's own private documents (P&IDs of its sites) stay private:
+only that company has a link to them.
+
+### 2. Database: make every search small
+- **Search inside a small set, not the whole library.** The question is always asked for one company, and in a real
+  product for one **installation** (the technician picks the site or scans the unit). Filtering first by
+  "documents of this installation" (a handful of manuals + its P&ID) means the vector search runs over thousands of
+  chunks, not millions. This also fixes the ambiguous questions (dev-05, dev-19).
+- **Partition the chunks table** (by file hash / by company for private docs), each partition with its own HNSW
+  and full-text (GIN) index, so an index fits in memory and a search touches one partition.
+- **Smaller vectors**: pgvector `halfvec` (16-bit) halves vector storage with almost no quality loss; binary
+  quantization (with a fast re-check of the top results on the real text) shrinks it further.
+- **Filtered vector search**: pgvector's HNSW with iterative scan (`hnsw.iterative_scan`) so a filter on documents
+  still returns enough results; or **pgvectorscale (DiskANN)** for indexes larger than memory.
+- **When Postgres is not enough**: keep Postgres for companies, users, documents, chats; move vectors to a vector
+  database with one namespace per company/file group (Qdrant, Turbopuffer, Vespa). The code is ready for that: all
+  search goes through `hybrid-search.ts`.
+- **Read replicas** for search, the primary for writes (uploads, chats).
+
+### 3. Ingestion: a real pipeline
+- **Queue**: the `documents` table with `FOR UPDATE SKIP LOCKED` handles many workers; at this volume use a
+  managed queue (SQS / Redis Streams) with **priorities** (a company's first upload before a bulk import) and
+  **retries with backoff**.
+- **Split the work per page**: Docling, vision and embedding as separate steps, so a 180-page manual runs on many
+  workers at once, and one failing page is retried alone.
+- **GPUs**: Docling and BGE-M3 embeddings as separate GPU services (e.g. Hugging Face
+  text-embeddings-inference), batched. CPU-in-the-API was fine for 9 manuals, not for millions.
+- **Uploads** straight to object storage (S3/R2) with presigned URLs; the API never holds file bytes.
+- **Autoscaling** workers on queue length; vision through the **Batch API** (50 % cheaper, not time-critical).
+
+### 4. Answering at scale
+- Re-test a reranker (hosted or GPU, not CPU) on the bigger document set; keep it only if the eval improves.
+- **Caches**: embeddings of frequent questions, answers to identical questions per installation (invalidated
+  when a document changes).
+- **Rate limits and budgets per company**; the cost of every answer is already saved per message.
+
+### 5. Keep quality measurable
+- The eval runs in CI on every change (dev set + harder sets + real questions technicians asked, with consent).
+- Monitor per company: abstention rate, latency p50/p95, cost, 👍/👎 from saved messages; alert on drift.
+- **Versioned embeddings**: a new embedding model writes a new column, re-indexed in the background, switched when
+  the eval says it is better.
+
+**In one sentence for the debrief:** "Process each unique manual once and share it, search only the documents of
+the technician's installation, partition and compress the vectors, and move the heavy models to GPU workers."
+
+---
+
+## 12b. The three hints from the brief, and how I handled them
+
+**1. "Look at the documents before you write code. The hard questions are hard for a reason."**
+Before coding I made `docs/inventory.md`: per document the language, pages, text layer or not, type; per dev
+question the category and *why* it is hard (table, icon, scan, drawing, cross-language). That drove the design:
+the scan → OCR, icons and the P&ID → vision, broken tables → vision with self-contained rows, error codes → full-text
+search next to vectors, French manual + Dutch question → multilingual model + the agent searching in French.
+
+**2. "Your evaluation is part of the product. If it says 95 % and our held-out questions say otherwise, that tells
+us something."**
+- The eval is honest by design: counts not just %, only fully correct answers count, crashes count as wrong,
+  `--runs 3` shows flaky questions, and I read the failures by hand (dev-05 is a label issue, dev-19 is ambiguous).
+- I did **not** tune on wording: the rules are general (evidence, labels, named brand, search again), and I checked
+  them on questions I wrote myself (20/20) and on a **hard set** made to break it (icons, scans, the P&ID,
+  cross-language tables, traps that sit right next to real facts).
+- If their held-out score is lower, the report shows *where*: search did not find the page (retrieval), it found it
+  but answered wrong (generation), or it guessed instead of abstaining. That is what the separate metrics are for.
+
+**3. "Tell us what you would change before this ran for 500 companies with 10,000 documents each."**
+See section 12 above: process each unique manual once and share it, filter by installation, partition and
+compress the vectors (or a vector database), page-level ingest on GPU workers, presigned uploads, caching, and the
+eval + monitoring per company.
 
 ---
 
@@ -263,7 +360,7 @@ I prefer to show that honestly; I did not tune the prompt to the dev set wording
 **Why Haiku and not a bigger model?** I measured it: a bigger model scored lower or the same, at 12× the cost.
 The problems were retrieval (what it sees), so I fixed retrieval.
 
-**How does it handle Dutch questions about French manuals?** BGE-M3 is multilingual, the reranker too, and the agent
+**How does it handle Dutch questions about French manuals?** BGE-M3 is multilingual, and the agent
 searches again in the manual's own language using the manuals list.
 
 **How do icons and the P&ID work?** Page routing sends those pages to Claude vision once at ingest; the
@@ -276,11 +373,13 @@ the queue. A document is "ready" only when every step worked.
 **How do you add a document without re-processing the others?** Each file is identified by its sha256; existing
 files are skipped, and Docling/vision results are cached by hash.
 
-**What is slow and how would you fix it?** The reranker on CPU (~8 s). GPU or hosted reranker → ~4 s total.
+**What is slow and how would you fix it?** It was the reranker on CPU (7–8 s, 11–31 s on the server). I measured it
+with and without: same score without it (dev 19/21, hard 30/32 vs 29/32), so I removed it: p50 11 s → 4.5 s.
+Now Claude is most of the time (~4.6 s), and the answer streams from the first words.
 
 **What would you do with another week?** Installation context (the technician picks the site/unit, which removes the
 ambiguity), evidence quote shown under each answer, 👍/👎 feedback, a bigger test set from real questions,
-bucket uploads, reranker on GPU.
+bucket uploads, a fast hosted reranker re-tested at scale.
 
 **How is the data of one company kept from another?** tenant_id on every row and every query, company taken from the
 login session only, chats per user. Tested: another company's cookie sees nothing, a forged cookie gets 401.

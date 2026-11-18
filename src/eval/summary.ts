@@ -23,7 +23,7 @@ export type EvalSummary = {
     falseAbstain: number; // abstained although the manuals cover it
   };
   latencyMs: { p50: number; p95: number; max: number; avg: number };
-  timeSplitMs: { search: number; rerank: number; claude: number; claudeTurns: number }; // average per question
+  timeSplitMs: { search: number; claude: number; claudeTurns: number }; // average per question
   tokens: { input: number; output: number }; // average per question
   cost: { perQuestionUsd: number; answersUsd: number; judgeUsd: number; totalUsd: number };
 };
@@ -75,7 +75,6 @@ export function summarize(rows: EvalRow[], crashed: string[]): EvalSummary {
     },
     timeSplitMs: {
       search: Math.round(avg((r) => r.timings.searchMs)),
-      rerank: Math.round(avg((r) => r.timings.rerankMs)),
       claude: Math.round(avg((r) => r.timings.claudeMs)),
       claudeTurns: avg((r) => r.timings.claudeTurns),
     },

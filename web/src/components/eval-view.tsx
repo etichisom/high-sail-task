@@ -24,7 +24,7 @@ type Summary = {
   numbersExact: Count;
   abstention: { accuracy: Count; precision: Count; recall: Count; hallucinated: number; falseAbstain: number };
   latencyMs: { p50: number; p95: number; max: number; avg: number };
-  timeSplitMs: { search: number; rerank: number; claude: number; claudeTurns: number };
+  timeSplitMs: { search: number; claude: number; claudeTurns: number };
   tokens: { input: number; output: number };
   cost: { perQuestionUsd: number; answersUsd: number; judgeUsd: number; totalUsd: number };
 };
@@ -360,7 +360,7 @@ function RunReport({ run, onCancel, onDownload }: { run: Run; onCancel: () => vo
           </div>
           <Card>
             <CardContent className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
-              <Line label="Time per question (avg)" value={`search ${sec(s.timeSplitMs.search)} · reranker ${sec(s.timeSplitMs.rerank)} · Claude ${sec(s.timeSplitMs.claude)} (${s.timeSplitMs.claudeTurns.toFixed(1)} turns)`} />
+              <Line label="Time per question (avg)" value={`search ${sec(s.timeSplitMs.search)} · Claude ${sec(s.timeSplitMs.claude)} (${s.timeSplitMs.claudeTurns.toFixed(1)} turns)`} />
               <Line label="Abstention precision / recall" value={`${frac(s.abstention.precision)} / ${frac(s.abstention.recall)}`} />
               <Line label="Answerable questions correct" value={frac(s.answerableCorrect)} />
               {s.languageMatch && <Line label="Answered in the question's language" value={`${frac(s.languageMatch)} (${pct(s.languageMatch)})`} />}
