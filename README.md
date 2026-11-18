@@ -9,9 +9,9 @@ error-code flowcharts and an A1 P&ID drawing).
 
 | | Result |
 |---|---|
-| Dev questions (21) | **90 % correct** (19/21), right page cited 89–94 %, honest abstention |
+| Dev questions (21), 2 runs | **38/42 (90 %)**, right page found and cited 36/36, language 42/42 |
 | Self-made test questions (20, written by us and checked against the PDFs, not used for tuning) | **20/20 correct**, all 3 "not covered" refused |
-| Hard set (16, written to break it: icons, scans, P&ID, cross-language tables, traps), 2 runs | **30/32**, right page found and cited 24/24 |
+| Hard set (16, written to break it: icons, scans, P&ID, cross-language tables, traps), 2 runs | **30/32 (94 %)**, right page found and cited 24/24 |
 | Latency per question (laptop CPU) | p50 **4.5 s**, p95 **8 s** |
 | Cost per question | **$0.0016** (Claude Haiku 5.5) |
 | One-time ingestion cost | **$0.26** for the whole pack (vision on 231 of 585 pages) |
@@ -202,6 +202,18 @@ on a laptop CPU and 11–31 s on the 4-vCPU server. Measured with the agent in p
 (dev 19/21 both, hard set 30/32 vs 29/32), so it was removed. If a much larger document set makes search noisier, a
 hosted or GPU reranker can come back, decided by the eval.
 
+### Bugs the evaluation found (and fixed)
+- **Uploaded manuals were labelled with a hash.** Chunks start with the manual's name so a question that names a brand
+  finds its table rows. For files uploaded through the web app the name came from the stored file (`<sha256>.pdf`),
+  not from the uploaded name, so search for real uploads was weaker than the eval (run on CLI-loaded data) showed. A
+  live eval run caught it (hard-05 wrong on an uploaded account). Fixed: the name now comes from the documents row;
+  existing chunks repaired; a fresh upload on the live site was checked.
+- **A fix that made the eval worse, so it was rolled back.** The EcoFlow cover photo shows unlabelled icons, and vision
+  wrote guessed meanings for them. A stricter vision prompt (v3: "only meanings printed on the page") removed the
+  guesses, but its re-read described two look-alike icons differently and broke another question. Measured over 2 runs
+  each, with the hash fix in place: v2 dev 38/42 + hard 30/32, v3 dev 36/42 + hard 26/32. v2 stays the default;
+  v3 is kept behind `VISION_PROMPT_VERSION=3` for later work.
+
 ### Known limits (honest)
 - **dev-05 (glycol %)** is labelled "not covered", but the Midea manual says "never exceed 35 %" (PDF p41). The system
   answers that, naming the Midea manual. The label seems to assume a Panasonic installation; the question names no brand.
@@ -212,6 +224,9 @@ hosted or GPU reranker can come back, decided by the eval.
 - **dev-04 (H62 steps)** is flaky: correct in most runs, "partial" in others when it shortens the flow-switch test.
 - **hard-14 (which brand of heat pump is on the roof?)**: the drawing names no brand. The system says so, but adds the
   capacity and refrigerant instead of a clean "not in the manuals", so it counts as not abstaining.
+- **Guessed icon meanings in the index**: vision v2 can describe an unlabelled icon (e.g. on a cover photo) with a
+  guessed meaning. It caused no wrong answer once the hash fix was in, but it is invented text in the index; a better
+  fix than v3 is to record where an icon appears (status bar, menu, cover photo) and only trust labelled ones.
 - In a real product the app would know which installation the technician is at; that removes the dev-05 and
   dev-19 ambiguity.
 

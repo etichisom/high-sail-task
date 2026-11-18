@@ -13,12 +13,19 @@ const client = new Anthropic();
 
 // Tested in Lab 8.6 on the P&ID (A1 drawing), EcoFlow icon pages and Mitsubishi p5
 // v2 (Lab 14): rows that make sense on their own (merged cells, tables without their own header), valve types
-const PROMPT_VERSION = 2;
+// v3: never guess what an icon means. On the EcoFlow cover photo v2 labelled unexplained icons ("drop with a plus:
+// water supplement"), and that invented meaning beat the real icon table on p.4 (hard-05 answered wrong).
+// Measured (2 runs each, with the chunk-name fix in place): v2 dev 38/42 + hard 30/32, v3 dev 36/42 + hard 26/32.
+// v3's re-read described two look-alike EcoFlow icons differently and broke hard-06, so v2 stays the default.
+// VISION_PROMPT_VERSION=3 turns the v3 rule on (for new experiments).
+const PROMPT_VERSION = Number(process.env.VISION_PROMPT_VERSION ?? 2);
+const NO_GUESS_RULE = `
+- Only write a meaning that is printed on this page. If an icon has no meaning written next to it (for example icons on a cover picture or a photo of a screen), describe its shape and write "(meaning not given on this page)". Never guess what an icon means.`;
 const PROMPT = `This is one page of a technical manual or drawing.
 Transcribe everything on it as markdown, in the page's own language.
 - Tables become markdown tables, with their column headers.
 - Every table row must make sense on its own: when a value spans several columns (merged cells), repeat it in each column; when a table continues lower on the page without its own header (e.g. its values sit under the columns of the table above), give it that table's column headers.
-- For every icon or pictogram, describe what it looks like in words (e.g. "suitcase with a clock", "yellow warning triangle") followed by the meaning the page gives it.
+- For every icon or pictogram, describe what it looks like in words (e.g. "suitcase with a clock", "yellow warning triangle") followed by the meaning the page gives it.${PROMPT_VERSION >= 3 ? NO_GUESS_RULE : ""}
 - For diagrams and P&IDs: list every component with its tag and data (size, pressure, setpoint), then list every pipe connection as "tag → tag" in flow order, including valves on each line.
 - For every valve, give its type from its drawing symbol and the legend (e.g. "V-202: butterfly valve", "V-101: ball valve"), not a group like "ball/butterfly valve".
 - Keep codes and tags exactly as printed (e.g. V-202, EV-01, F12).

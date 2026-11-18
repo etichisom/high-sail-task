@@ -15,12 +15,14 @@ export async function addVisionChunks(
   onPage?: (page: number, cached: boolean) => void, // lets the CLI show progress
 ): Promise<VisionResult> {
   const hash = fileHash(pdfPath);
-  const found = await pool.query<{ id: string }>(
+  const found = await pool.query<{ id: string; filename: string }>(
     // No status check: the pipeline calls this while the document is still 'processing' (before it is ready)
-    "SELECT id FROM documents WHERE tenant_id = $1 AND file_hash = $2",
+    "SELECT id, filename FROM documents WHERE tenant_id = $1 AND file_hash = $2",
     [tenantId, hash],
   );
   const documentId = found.rows[0]?.id;
+  // The manual's real name from the documents row (an upload's file path is <sha256>.pdf)
+  const manual = basename(found.rows[0]?.filename ?? pdfPath, ".pdf");
   if (!documentId) throw new Error("not ingested for this company yet (run ingest first)");
 
   const flagged = pagesNeedingVision(await convertPdf(pdfPath)).map((p) => p.page);
@@ -43,7 +45,7 @@ export async function addVisionChunks(
         const client = await pool.connect();
         try {
           await client.query("BEGIN");
-          for (const piece of splitPage(text, basename(pdfPath, ".pdf"))) {
+          for (const piece of splitPage(text, manual)) {
             await client.query(
               `INSERT INTO chunks (tenant_id, document_id, page_start, page_end, chunk_type, section, source, content)
                VALUES ($1, $2, $3, $3, $4, $5, 'vision', $6)`,

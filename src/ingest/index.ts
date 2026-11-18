@@ -31,14 +31,17 @@ export async function ingestDocument(
   }
 
   // 2. Create the document row (or reuse it after an earlier failure)
-  const { rows } = await pool.query<{ id: string }>(
+  const { rows } = await pool.query<{ id: string; filename: string }>(
     `INSERT INTO documents (tenant_id, filename, file_hash, status)
      VALUES ($1, $2, $3, 'processing')
      ON CONFLICT (tenant_id, file_hash) DO UPDATE SET status = 'processing', error = NULL
-     RETURNING id`,
+     RETURNING id, filename`,
     [tenantId, filename, hash],
   );
   const documentId = rows[0]!.id;
+  // The manual's real name. Uploads are stored as <sha256>.pdf, so the file path is not the name: the documents row
+  // keeps the name the user uploaded (the upload API creates it first).
+  const manual = basename(rows[0]!.filename, ".pdf");
 
   try {
     // 3. PDF → Docling JSON → chunks, and which pages need vision (used in step 8.6)
@@ -54,7 +57,6 @@ export async function ingestDocument(
       await client.query("DELETE FROM chunks WHERE document_id = $1", [documentId]);
       // Every chunk starts with the manual's name ("midea-r290-mono-4-16kw-installation-en"), so a question
       // that names the brand or model can match a table row that never mentions it (same as vision chunks)
-      const manual = basename(pdfPath, ".pdf");
       for (const chunk of chunks) {
         await client.query(
           `INSERT INTO chunks (tenant_id, document_id, page_start, page_end, chunk_type, section, source, content)
