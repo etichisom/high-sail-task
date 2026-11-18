@@ -24,6 +24,10 @@ export const config = {
   answerModel: process.env.ANSWER_MODEL ?? "claude-haiku-5-5",
   answerEffort: process.env.ANSWER_EFFORT ?? "medium", // low | medium | high: how much Claude thinks first
   answerSources: Number(process.env.ANSWER_SOURCES ?? 8), // chunks from hybrid search sent to Claude
+  // Reranker (Lab 13): reorders the hybrid search candidates before Claude sees the best few
+  rerankModel: process.env.RERANK_MODEL ?? "onnx-community/bge-reranker-v2-m3-ONNX",
+  rerankDtype: process.env.RERANK_DTYPE ?? "q8",
+  rerankCandidates: Number(process.env.RERANK_CANDIDATES ?? 40), // hybrid search hits the reranker reads
   // Vision (Lab 8.6): Claude reads pages with icons, diagrams and broken tables, once, at ingest
   visionModel: process.env.VISION_MODEL ?? "claude-haiku-5-5",
   visionConcurrency: Number(process.env.VISION_CONCURRENCY ?? 4), // pages sent to Claude at the same time

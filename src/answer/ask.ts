@@ -4,6 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import { config } from "../config.js";
 import { hybridSearch } from "../retrieval/hybrid-search.js";
+import { rerank } from "../retrieval/rerank.js";
 
 export type Citation = { filename: string; pageStart: number; pageEnd: number };
 
@@ -59,8 +60,9 @@ const client = new Anthropic(); // reads ANTHROPIC_API_KEY from the environment 
 export async function ask(tenantId: string, question: string): Promise<AskResult> {
   const started = Date.now();
 
-  // 1. Retrieve: the best chunks of this company's manuals
-  const hits = await hybridSearch(tenantId, question, config.answerSources);
+  // 1. Retrieve: hybrid search finds ~40 candidates, the reranker picks the best few for Claude
+  const candidates = await hybridSearch(tenantId, question, config.rerankCandidates);
+  const hits = await rerank(question, candidates, config.answerSources);
   const searchMs = Date.now() - started;
 
   // 2. Augment: number the chunks, so Claude can cite them as 1, 2, 3…
