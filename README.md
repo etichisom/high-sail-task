@@ -1,5 +1,7 @@
 # Ask the Manual
 
+**📊 Debrief slides: [docs/slides.pdf](docs/slides.pdf)** · Live demo: [highsail-task.lernie.net](https://highsail-task.lernie.net)
+
 A field technician asks a question about a heat pump or a plant room, in **English, Dutch or French**.
 The service answers **in the language of the question**, cites the **document and PDF page** for every fact,
 and says **"not in the manuals"** instead of guessing when the documents do not contain the answer.
